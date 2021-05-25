@@ -59,7 +59,6 @@ def task_write(thead_local: ThreadLocal):
 
 def task_read(thead_local: ThreadLocal):
     print("task_read")
-    thead_local.rdp = ReadDataParser()
     while True:
         sleep(0.1)
         try:
@@ -94,6 +93,7 @@ class SerialThread:
         self.thead_local_write.t = Thread(target=task_write, args=(self.thead_local_write,))
 
         self.thead_local_read = ThreadLocal()
+        self.thead_local_read.rdp = ReadDataParser()
         self.thead_local_read.q = self.q_read
         self.thead_local_read.s = self.s
         self.thead_local_read.t = Thread(target=task_read, args=(self.thead_local_read,))
