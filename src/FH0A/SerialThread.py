@@ -5,6 +5,8 @@ from threading import Thread
 from typing import List, Dict, Any, Tuple, Union, Literal
 from enum import Enum
 
+from ReadDataParser import ReadDataParser
+
 
 class QueueSignal(Enum):
     SHUTDOWN = 0
@@ -19,6 +21,8 @@ class ThreadLocal:
     s: serial.Serial = None
     t: Thread = None
     exit_queue: Queue = Queue()
+
+    rdp: ReadDataParser = None
 
     def __init__(self):
         pass
@@ -55,6 +59,7 @@ def task_write(thead_local: ThreadLocal):
 
 def task_read(thead_local: ThreadLocal):
     print("task_read")
+    thead_local.rdp = ReadDataParser()
     while True:
         sleep(0.1)
         try:
@@ -63,6 +68,10 @@ def task_read(thead_local: ThreadLocal):
         except Empty:
             pass
         # TODO read from serial port
+        d = thead_local.s.read(1024)
+        print("read:", d)
+        # if len(d) > 0:
+        thead_local.rdp.push(d)
     print("task_read done.")
     pass
 
@@ -77,7 +86,7 @@ class SerialThread:
         self.port = port
         self.q_write = Queue()
         self.q_read = Queue()
-        self.s = serial.Serial(port)
+        self.s = serial.Serial(port, timeout=1)
 
         self.thead_local_write = ThreadLocal()
         self.thead_local_write.q = self.q_write
