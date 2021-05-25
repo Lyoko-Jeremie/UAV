@@ -27,7 +27,7 @@ class ThreadLocal:
 
 
 def task_write(thead_local: ThreadLocal):
-    print("task")
+    print("task_write")
     while True:
         sleep(0.1)
         try:
@@ -45,7 +45,7 @@ def task_write(thead_local: ThreadLocal):
                 pass
         except Empty:
             pass
-        # do send cmd
+        # TODO send cmd
         # if thead_local.latest_cmd is not None:
         #     thead_local.s.write(thead_local.latest_cmd)
         pass
@@ -54,6 +54,16 @@ def task_write(thead_local: ThreadLocal):
 
 
 def task_read(thead_local: ThreadLocal):
+    print("task_read")
+    while True:
+        sleep(0.1)
+        try:
+            if thead_local.exit_queue.get(block=False) is QueueSignal.SHUTDOWN:
+                break
+        except Empty:
+            pass
+        # TODO read from serial port
+    print("task_read done.")
     pass
 
 
@@ -89,6 +99,7 @@ class SerialThread:
 
     def shutdown(self):
         self.thead_local_write.exit_queue.put(QueueSignal.SHUTDOWN)
+        self.thead_local_read.exit_queue.put(QueueSignal.SHUTDOWN)
         self.thead_local_write.t.join()
         self.thead_local_read.t.join()
         self.s.close()
