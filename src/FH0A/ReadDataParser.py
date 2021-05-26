@@ -109,7 +109,7 @@ class ReadDataParser:
         pass
 
     def try_parse(self):
-        if len(self.read_buffer) > 3:
+        while len(self.read_buffer) > 3:
             header = self.read_buffer[0:3]
             size = header[1]
             # print("header", header, size, header[0], header[1], header[2])
@@ -150,10 +150,13 @@ class ReadDataParser:
                     pass
                 pass
 
-            if len(self.read_buffer) > size + 3:
-                self.read_buffer = self.read_buffer[size + 3:]
-                self.try_parse()
-                pass
+            self.read_buffer = self.read_buffer[size + 3:]
+            if len(self.read_buffer) <= size + 3:
+                break
+            # if len(self.read_buffer) > size + 3:
+            #     self.read_buffer = self.read_buffer[size + 3:]
+            #     self.try_parse()
+            #     pass
             pass
         pass
 
@@ -169,7 +172,7 @@ class ReadDataParser:
             self_test_flag=unpack_from("!H", params, 9)[0],
             setting_flag=unpack_from("!H", params, 11)[0]
         )
-        # print("self._base_info", self._base_info)
+        # print("self._base_info", self.m_base_info)
         pass
 
     def sensor_info(self, data: bytearray):
@@ -192,7 +195,7 @@ class ReadDataParser:
             mv_mode=unpack_from("!B", params, 23)[0],
             obsDir=unpack_from("!B", params, 24)[0],
         )
-        # print("self._sensor_info", self._sensor_info)
+        # print("self._sensor_info", self.m_sensor_info)
         pass
 
     def vision_sensor_info(self, data: bytearray):
@@ -211,7 +214,7 @@ class ReadDataParser:
             loc_y=unpack_from("!h", params, 16)[0],
             reserved1=unpack_from("!h", params, 18)[0],
         )
-        # print("self._vision_sensor_info", self._vision_sensor_info)
+        # print("self._vision_sensor_info", self.m_vision_sensor_info)
         pass
 
     def other(self, data: bytearray):
@@ -228,7 +231,7 @@ class ReadDataParser:
             software=unpack_from("!I", params, 4)[0],
             iap_ware=unpack_from("!H", params, 8)[0],
         )
-        print("self._hardware_info", self._hardware_info)
+        print("self._hardware_info", self.m_hardware_info)
         pass
 
     def multi_setting_info(self, data: bytearray):
@@ -241,7 +244,7 @@ class ReadDataParser:
             channel=unpack_from("!B", params, 3)[0],
             addr=unpack_from("!I", params, 4)[0],
         )
-        print("self._multi_setting_info", self._multi_setting_info)
+        print("self._multi_setting_info", self.m_multi_setting_info)
         pass
 
     def single_setting_info(self, data: bytearray):
@@ -253,7 +256,7 @@ class ReadDataParser:
             channel=unpack_from("!B", params, 2)[0],
             addr=unpack_from("!I", params, 3)[0],
         )
-        print("self._single_setting_info", self._single_setting_info)
+        print("self._single_setting_info", self.m_single_setting_info)
         pass
 
     pass

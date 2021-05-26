@@ -7,12 +7,8 @@ from enum import Enum
 from struct import pack, unpack, pack_into, unpack_from
 
 from ReadDataParser import ReadDataParser
-
-
-class QueueSignal(Enum):
-    SHUTDOWN = 0
-    CMD = 1
-    pass
+from CommandConstructor import CommandConstructor
+from QueueSignal import QueueSignal
 
 
 class ThreadLocal:
@@ -43,7 +39,7 @@ def task_write(thead_local: ThreadLocal):
         try:
             d = thead_local.q.get(block=False, timeout=-1)
             if isinstance(d, tuple):
-                print("Tuple:", d)
+                print("Tuple:", (d[0], d[1].hex(' ')))
                 if d[0] is QueueSignal.CMD and len(d[1]) > 0:
                     thead_local.latest_cmd = d[1]
                     pass
@@ -52,6 +48,7 @@ def task_write(thead_local: ThreadLocal):
             pass
         # send cmd
         if thead_local.latest_cmd is not None and len(thead_local.latest_cmd) > 0:
+            # print("write:", thead_local.latest_cmd)
             thead_local.s.write(thead_local.latest_cmd)
         pass
     print("task_write done.")
@@ -136,51 +133,17 @@ class SerialThreadBase:
     pass
 
 
-class CmdType(Enum):
-    MULTI_SETTINGS = 1
-    SINGLE_SETTINGS = 2
-    SINGLE_CONTROL = 3
-    pass
-
-
 class SerialThread(SerialThreadBase):
-    order_last = 0
-
-    def order_count(self):
-        self.order_last = (self.order_last + 2) % 127
-        return self.order_last
-        pass
-
-    def check_sum(self, data: bytearray):
-        return sum(data) & 0xFF
-        pass
+    cc: CommandConstructor = None
 
     def __init__(self, port: str):
         super().__init__(port)
+        self.ss = CommandConstructor(self.thead_local_write.q)
+        print("ss", self.ss)
         pass
 
-    def join_cmd(self, type: CmdType, params: bytearray):
-        header = bytearray(b'\xBB\x00\x00')
-        if type == CmdType.MULTI_SETTINGS:
-            header[1] = 0x08
-            header[2] = 0x04
-            checksum = bytearray(self.check_sum(header + params))
-            return header + params + checksum
-            pass
-        elif type == CmdType.SINGLE_SETTINGS:
-            header[1] = 0x07
-            header[2] = 0x05
-            checksum = bytearray(self.check_sum(header + params))
-            return header + params + checksum
-            pass
-        elif type == CmdType.SINGLE_CONTROL:
-            header[1] = 0x0B
-            header[2] = 0xF3
-            params.append(self.order_count())
-            checksum = bytearray(self.check_sum(header + params))
-            return header + params + checksum
-            pass
-        pass
+    def proxy(self):
+        return self.ss
 
     pass
 
@@ -197,12 +160,28 @@ class SerialThreadWrapper(SerialThread):
 if __name__ == '__main__':
     st = SerialThreadWrapper("COM3")
     sleep(2)
-    d = bytearray(b'\xBB\x0B\xF3\x08\x02\x00\x00\x00\x02')
-    sum = sum(d)
-    print(sum, sum & 0xFF)
-    d.append(sum & 0xFF)
-    print(d.hex(' '))
-    st.send_cmd(d)
-    sleep(5)
+    # d = bytearray(b'\xBB\x0B\xF3\x08\x02\x00\x00\x00\x02')
+    # sum = sum(d)
+    # print(sum, sum & 0xFF)
+    # d.append(sum & 0xFF)
+    # print(d.hex(' '))
+    # st.send_cmd(d)
+    print("st", st)
+    print("st.s", st.s)
+    print("st.cc", st.cc)
+    print("st.call()", st.proxy())
+    print("st.hardware_info", st.hardware_info())
+    # st.call().led(2, 255, 0, 255)
+    st.proxy().read_hardware_setting()
+    sleep(1)
+    st.proxy().read_multi_setting()
+    sleep(1)
+    st.proxy().read_single_setting()
+    sleep(1)
+    # st.call().takeoff(0)
+    sleep(1)
+    print("st.hardware_info", st.hardware_info())
+    print("st.single_setting_info", st.single_setting_info())
+    print("st.multi_setting_info", st.multi_setting_info())
     st.shutdown()
     pass
