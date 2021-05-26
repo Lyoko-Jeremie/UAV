@@ -140,7 +140,7 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def forward(self, distance: int):
-        self.move(0x02, distance)
+        self.move(0x03, distance)
         pass
 
     def back(self, distance: int):
