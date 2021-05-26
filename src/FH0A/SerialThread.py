@@ -153,6 +153,7 @@ class SerialThread(SerialThreadCore):
 #     pass
 
 
+# TODO manual test code on here
 if __name__ == '__main__':
     # st = SerialThreadWrapper("COM3")
     st = SerialThread("COM3")
