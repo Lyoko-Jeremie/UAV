@@ -148,6 +148,9 @@ class ReadDataParser:
                     # Header_Others_SingleSetting_Info like
                     self.single_setting_info(data)
                     pass
+                else:
+                    # don't care
+                    pass
                 pass
 
             self.read_buffer = self.read_buffer[size + 3:]
