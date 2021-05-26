@@ -1,6 +1,9 @@
+from queue import Queue
+from struct import pack, unpack, pack_into, unpack_from
 from typing import List, Dict, Any, Tuple, Union, Literal
+from dataclasses import dataclass
 
-Header_Power_Info = b'\xAA\x0D\x07'
+Header_Base_Info = b'\xAA\x0D\x07'
 Header_Sensor_info = b'\xAA\x19\x30'
 Header_Vision_Sensor_info = b'\xAA\x14\x01'
 Header_Others = '\xAA\x09\xf1'
@@ -9,9 +12,96 @@ Header_Others_MultiSetting_Info = '\xAA\x00\x04'
 Header_Others_SingleSetting_Info = '\xAA\x00\x05'
 
 
+@dataclass
+class BaseInfo:
+    fly_id: int  # 编队模式下的飞机编号，如果是单机模式则固定是0xFF。
+    hardwareType: int  # 硬件类型，固定是1，代表小四轴无人机
+    fly_voltage: int  # 飞机电池电压
+    rmt_voltages16: int  # 遥控电池电压
+    nrf_ssi: int  # 无人机收到遥控器数据的帧数
+    self_test_flag: int  # 传感器自检状态
+    setting_flag: int  # 当前设置状态
+
+
+@dataclass
+class SensorInfo:
+    flow_x: int  # 光流x轴数据
+    flow_y: int  # 光流y轴数据
+    flow_qualt: int  # 光流数据可靠性指数
+
+    dot_x: int  # 检测到点的x轴坐标
+    dot_y: int  # 检测到点的y轴坐标
+    is_dot_ok: int  # 是否检测到点，非零表示检测到了。
+
+    line_x: int  # 检测到竖线的坐标
+    line_y: int  # 检测到横线的坐标
+    line_x_angle: int  # 检测到竖线的倾角
+    line_y_angle: int  # 检测到横线的倾角
+    line_flag: int  # 是否检测到线的标志
+    # （bit0=1表示前方检测到线，bit1=1表示后方检测到线，bit2=1表示左方检测到线，bit3=1表示右方检测到线）
+
+    tag_id: int  # 检测到的标签编号
+    is_tag_ok: int  # 是否检测到标签，非零表示检测到了。
+
+    mv_mode: int  # 当前视觉模块的工作模式
+
+    obsDir: int  # 非零表示检测到了障碍物
+
+
+@dataclass
+class VisionSensorInfo:
+    lock_flag: int  # 0上锁状态1解锁状态
+    reserved0: int  # 预留
+
+    rol: int  # 横滚角，单位：度
+    pit: int  # 俯仰角，单位：度
+    yaw: int  # 航向角，单位：度
+    high: int  # 高度，单位：厘米
+
+    id: int  # 固定是0，目前没什么意义
+
+    loc_x: int  # 当前x坐标，单位：厘米
+    loc_y: int  # 当前y坐标，单位：厘米
+    reserved1: int  # 预留
+
+
+@dataclass
+class HardwareInfo:
+    hardtype: int  # 硬件类型(0遥控1飞机)
+    hardware: int  # 硬件版本(例如：software=400，表示V4.0.0)
+    software: int  # 软件版本(固件更新日期，例如：20200101)
+    iap_ware: int  # IAP版本(iap_ware=100，表示V1.0.0)
+
+
+@dataclass
+class MultiSettingInfo:
+    mode: int  # 0单机模式1编队模式
+    id: int  # 飞机编号
+    channel: int  # 通信信道0~125
+    addr: int  # 通信地址
+
+
+@dataclass
+class SingleSettingInfo:
+    mode: int  # 0低速1中速2高速
+    channel: int  # 通信信道0~125
+    addr: int  # 通信地址（多台机子同时在单机模式下工作必须要把信道和地址设置为不一样）
+
+
 class ReadDataParser:
     read_buffer: bytearray = bytearray()
     split_buffer: List[bytearray] = []
+    q: Queue = None
+    m_base_info: BaseInfo = None
+    m_sensor_info: SensorInfo = None
+    m_vision_sensor_info: VisionSensorInfo = None
+    m_hardware_info: HardwareInfo = None
+    m_multi_setting_info: MultiSettingInfo = None
+    m_single_setting_info: SingleSettingInfo = None
+
+    def __init__(self, q_read):
+        self.q = q_read
+        pass
 
     def push(self, data: Union[bytearray, bytes]):
         self.read_buffer = self.read_buffer + data
@@ -23,10 +113,10 @@ class ReadDataParser:
             header = self.read_buffer[0:3]
             size = header[1]
             # print("header", header, size, header[0], header[1], header[2])
-            if header == Header_Power_Info:
+            if header == Header_Base_Info:
                 data = self.read_buffer[0: size + 3]
-                # print("Header_Power_Info", 0, size, len(data), data)
-                self.power_info(data)
+                # print("Header_Base_Info", 0, size, len(data), data)
+                self.base_info(data)
                 pass
             elif header == Header_Sensor_info:
                 data = self.read_buffer[0: size + 3]
@@ -67,39 +157,103 @@ class ReadDataParser:
             pass
         pass
 
-    def power_info(self, data: bytearray):
-        print("Power_Info", data.hex(' '))
-        # TODO
+    def base_info(self, data: bytearray):
+        # print("Base_Info", data.hex(' '))
+        params = data[2:len(data) - 1]
+        self.m_base_info = BaseInfo(
+            fly_id=unpack_from("!B", params, 1)[0],
+            hardwareType=unpack_from("!B", params, 2)[0],
+            fly_voltage=unpack_from("!h", params, 3)[0] * 100,
+            rmt_voltages16=unpack_from("!h", params, 5)[0] * 100,
+            nrf_ssi=unpack_from("!h", params, 7)[0],
+            self_test_flag=unpack_from("!H", params, 9)[0],
+            setting_flag=unpack_from("!H", params, 11)[0]
+        )
+        # print("self._base_info", self._base_info)
         pass
 
     def sensor_info(self, data: bytearray):
-        print("Sensor_info", data.hex(' '))
-        # TODO
+        # print("Sensor_info", data.hex(' '))
+        params = data[2:len(data) - 1]
+        self.m_sensor_info = SensorInfo(
+            flow_x=unpack_from("!h", params, 1)[0],
+            flow_y=unpack_from("!h", params, 3)[0],
+            flow_qualt=unpack_from("!B", params, 5)[0],
+            dot_x=unpack_from("!h", params, 6)[0],
+            dot_y=unpack_from("!h", params, 8)[0],
+            is_dot_ok=unpack_from("!B", params, 10)[0],
+            line_x=unpack_from("!h", params, 11)[0],
+            line_y=unpack_from("!h", params, 13)[0],
+            line_x_angle=unpack_from("!h", params, 15)[0],
+            line_y_angle=unpack_from("!h", params, 15)[0],
+            line_flag=unpack_from("!B", params, 19)[0],
+            tag_id=unpack_from("!h", params, 20)[0],
+            is_tag_ok=unpack_from("!B", params, 22)[0],
+            mv_mode=unpack_from("!B", params, 23)[0],
+            obsDir=unpack_from("!B", params, 24)[0],
+        )
+        # print("self._sensor_info", self._sensor_info)
         pass
 
     def vision_sensor_info(self, data: bytearray):
-        print("Vision_Sensor_info", data.hex(' '))
+        # print("Vision_Sensor_info", data.hex(' '))
         # TODO
+        params = data[2:len(data) - 1]
+        self.m_vision_sensor_info = VisionSensorInfo(
+            lock_flag=unpack_from("!B", params, 1)[0],
+            reserved0=unpack_from("!B", params, 2)[0],
+            rol=unpack_from("!h", params, 3)[0] * 100,
+            pit=unpack_from("!h", params, 5)[0] * 100,
+            yaw=unpack_from("!h", params, 7)[0] * 100,
+            high=unpack_from("!i", params, 9)[0] * 100,
+            id=unpack_from("!B", params, 13)[0],
+            loc_x=unpack_from("!h", params, 14)[0],
+            loc_y=unpack_from("!h", params, 16)[0],
+            reserved1=unpack_from("!h", params, 18)[0],
+        )
+        # print("self._vision_sensor_info", self._vision_sensor_info)
         pass
 
     def other(self, data: bytearray):
-        print("other", data.hex(' '))
+        # print("other", data.hex(' '))
         # empty
         pass
 
     def hardware_info(self, data: bytearray):
-        print("hardware_info", data.hex(' '))
-        # TODO
+        # print("hardware_info", data.hex(' '))
+        params = data[2:len(data) - 1]
+        self.m_hardware_info = HardwareInfo(
+            hardtype=unpack_from("!B", params, 1)[0],
+            hardware=unpack_from("!H", params, 2)[0],
+            software=unpack_from("!I", params, 4)[0],
+            iap_ware=unpack_from("!H", params, 8)[0],
+        )
+        print("self._hardware_info", self._hardware_info)
         pass
 
     def multi_setting_info(self, data: bytearray):
-        print("multi_setting_info", data.hex(' '))
+        # print("multi_setting_info", data.hex(' '))
         # TODO
+        params = data[2:len(data) - 1]
+        self.m_multi_setting_info = MultiSettingInfo(
+            mode=unpack_from("!B", params, 1)[0],
+            id=unpack_from("!B", params, 2)[0],
+            channel=unpack_from("!B", params, 3)[0],
+            addr=unpack_from("!I", params, 4)[0],
+        )
+        print("self._multi_setting_info", self._multi_setting_info)
         pass
 
     def single_setting_info(self, data: bytearray):
-        print("single_setting_info", data.hex(' '))
+        # print("single_setting_info", data.hex(' '))
         # TODO
+        params = data[2:len(data) - 1]
+        self.m_single_setting_info = SingleSettingInfo(
+            mode=unpack_from("!B", params, 1)[0],
+            channel=unpack_from("!B", params, 2)[0],
+            addr=unpack_from("!I", params, 3)[0],
+        )
+        print("self._single_setting_info", self._single_setting_info)
         pass
 
     pass

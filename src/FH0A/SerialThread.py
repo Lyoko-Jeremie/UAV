@@ -4,6 +4,7 @@ from time import sleep
 from threading import Thread
 from typing import List, Dict, Any, Tuple, Union, Literal
 from enum import Enum
+from struct import pack, unpack, pack_into, unpack_from
 
 from ReadDataParser import ReadDataParser
 
@@ -49,9 +50,9 @@ def task_write(thead_local: ThreadLocal):
                 pass
         except Empty:
             pass
-        # TODO send cmd
-        # if thead_local.latest_cmd is not None:
-        #     thead_local.s.write(thead_local.latest_cmd)
+        # send cmd
+        if thead_local.latest_cmd is not None and len(thead_local.latest_cmd) > 0:
+            thead_local.s.write(thead_local.latest_cmd)
         pass
     print("task_write done.")
     pass
@@ -75,7 +76,7 @@ def task_read(thead_local: ThreadLocal):
     pass
 
 
-class SerialThread:
+class SerialThreadBase:
     s: serial.Serial = None
     port: str = None
     thead_local_write: ThreadLocal = None
@@ -93,9 +94,9 @@ class SerialThread:
         self.thead_local_write.t = Thread(target=task_write, args=(self.thead_local_write,))
 
         self.thead_local_read = ThreadLocal()
-        self.thead_local_read.rdp = ReadDataParser()
         self.thead_local_read.q = self.q_read
         self.thead_local_read.s = self.s
+        self.thead_local_read.rdp = ReadDataParser(self.thead_local_read.q)
         self.thead_local_read.t = Thread(target=task_read, args=(self.thead_local_read,))
 
         self.thead_local_write.t.start()
@@ -114,12 +115,94 @@ class SerialThread:
         self.s.close()
         pass
 
+    def base_info(self):
+        return self.thead_local_read.rdp.m_base_info
+
+    def sensor_info(self):
+        return self.thead_local_read.rdp.m_sensor_info
+
+    def vision_sensor_info(self):
+        return self.thead_local_read.rdp.m_vision_sensor_info
+
+    def hardware_info(self):
+        return self.thead_local_read.rdp.m_hardware_info
+
+    def single_setting_info(self):
+        return self.thead_local_read.rdp.m_single_setting_info
+
+    def multi_setting_info(self):
+        return self.thead_local_read.rdp.m_multi_setting_info
+
+    pass
+
+
+class CmdType(Enum):
+    MULTI_SETTINGS = 1
+    SINGLE_SETTINGS = 2
+    SINGLE_CONTROL = 3
+    pass
+
+
+class SerialThread(SerialThreadBase):
+    order_last = 0
+
+    def order_count(self):
+        self.order_last = (self.order_last + 2) % 127
+        return self.order_last
+        pass
+
+    def check_sum(self, data: bytearray):
+        return sum(data) & 0xFF
+        pass
+
+    def __init__(self, port: str):
+        super().__init__(port)
+        pass
+
+    def join_cmd(self, type: CmdType, params: bytearray):
+        header = bytearray(b'\xBB\x00\x00')
+        if type == CmdType.MULTI_SETTINGS:
+            header[1] = 0x08
+            header[2] = 0x04
+            checksum = bytearray(self.check_sum(header + params))
+            return header + params + checksum
+            pass
+        elif type == CmdType.SINGLE_SETTINGS:
+            header[1] = 0x07
+            header[2] = 0x05
+            checksum = bytearray(self.check_sum(header + params))
+            return header + params + checksum
+            pass
+        elif type == CmdType.SINGLE_CONTROL:
+            header[1] = 0x0B
+            header[2] = 0xF3
+            params.append(self.order_count())
+            checksum = bytearray(self.check_sum(header + params))
+            return header + params + checksum
+            pass
+        pass
+
+    pass
+
+
+class SerialThreadWrapper(SerialThread):
+
+    def __init__(self, port: str):
+        super().__init__(port)
+        pass
+
     pass
 
 
 if __name__ == '__main__':
-    st = SerialThread("COM3")
-    st.send_cmd(bytearray())
+    st = SerialThreadWrapper("COM3")
+    sleep(2)
+    d = bytearray(b'\xBB\x0B\xF3\x08\x02\x00\x00\x00\x02')
+    sum = sum(d)
+    print(sum, sum & 0xFF)
+    d.append(sum & 0xFF)
+    print(d.hex(' '))
+    st.send_cmd(d)
     sleep(5)
     st.shutdown()
     pass
