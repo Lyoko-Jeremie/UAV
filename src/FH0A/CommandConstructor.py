@@ -74,6 +74,9 @@ class CommandConstructorCore:
 
 
 class CommandConstructor(CommandConstructorCore):
+    """
+    TODO Implement All Command Methods On This Class
+    """
 
     def __init__(self, q_write: Queue):
         super().__init__(q_write)
@@ -99,6 +102,15 @@ class CommandConstructor(CommandConstructorCore):
         params = bytearray(10)
         pack_into("!B", params, 0, 0x01)
         pack_into("!h", params, 1, high)
+        cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("cmd", cmd.hex(' '))
+        self.sendCommand(cmd)
+
+        pass
+
+    def land(self, ):
+        params = bytearray(10)
+        pack_into("!B", params, 0, 0x00)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("cmd", cmd.hex(' '))
         self.sendCommand(cmd)
