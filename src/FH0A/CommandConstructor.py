@@ -13,7 +13,7 @@ class CmdType(Enum):
     pass
 
 
-class CommandConstructor:
+class CommandConstructorCore:
     order_last = 0
     q_write: Queue = None
 
@@ -70,6 +70,15 @@ class CommandConstructor:
             pass
         pass
 
+    pass
+
+
+class CommandConstructor(CommandConstructorCore):
+
+    def __init__(self, q_write: Queue):
+        super().__init__(q_write)
+        pass
+
     def led(self, mode: int, r: int, g: int, b: int):
         if mode < 0 or mode > 2:
             raise ValueError("mode illegal")
@@ -86,8 +95,7 @@ class CommandConstructor:
 
         pass
 
-    def takeoff(self, high: int,):
-
+    def takeoff(self, high: int, ):
         params = bytearray(10)
         pack_into("!B", params, 0, 0x01)
         pack_into("!h", params, 1, high)

@@ -2,11 +2,9 @@ import serial
 from queue import Queue, Empty
 from time import sleep
 from threading import Thread
-from typing import List, Dict, Any, Tuple, Union, Literal
-from enum import Enum
-from struct import pack, unpack, pack_into, unpack_from
 
-from ReadDataParser import ReadDataParser
+from ReadDataParser import ReadDataParser, BaseInfo, SensorInfo, VisionSensorInfo, HardwareInfo, SingleSettingInfo, \
+    MultiSettingInfo
 from CommandConstructor import CommandConstructor
 from QueueSignal import QueueSignal
 
@@ -73,7 +71,7 @@ def task_read(thead_local: ThreadLocal):
     pass
 
 
-class SerialThreadBase:
+class SerialThreadCore:
     s: serial.Serial = None
     port: str = None
     thead_local_write: ThreadLocal = None
@@ -112,28 +110,28 @@ class SerialThreadBase:
         self.s.close()
         pass
 
-    def base_info(self):
+    def base_info(self) -> BaseInfo:
         return self.thead_local_read.rdp.m_base_info
 
-    def sensor_info(self):
+    def sensor_info(self) -> SensorInfo:
         return self.thead_local_read.rdp.m_sensor_info
 
-    def vision_sensor_info(self):
+    def vision_sensor_info(self) -> VisionSensorInfo:
         return self.thead_local_read.rdp.m_vision_sensor_info
 
-    def hardware_info(self):
+    def hardware_info(self) -> HardwareInfo:
         return self.thead_local_read.rdp.m_hardware_info
 
-    def single_setting_info(self):
+    def single_setting_info(self) -> SingleSettingInfo:
         return self.thead_local_read.rdp.m_single_setting_info
 
-    def multi_setting_info(self):
+    def multi_setting_info(self) -> MultiSettingInfo:
         return self.thead_local_read.rdp.m_multi_setting_info
 
     pass
 
 
-class SerialThread(SerialThreadBase):
+class SerialThread(SerialThreadCore):
     cc: CommandConstructor = None
 
     def __init__(self, port: str):
@@ -142,23 +140,24 @@ class SerialThread(SerialThreadBase):
         print("ss", self.ss)
         pass
 
-    def proxy(self):
+    def send(self) -> CommandConstructor:
         return self.ss
 
     pass
 
 
-class SerialThreadWrapper(SerialThread):
-
-    def __init__(self, port: str):
-        super().__init__(port)
-        pass
-
-    pass
+# class SerialThreadWrapper(SerialThread):
+#
+#     def __init__(self, port: str):
+#         super().__init__(port)
+#         pass
+#
+#     pass
 
 
 if __name__ == '__main__':
-    st = SerialThreadWrapper("COM3")
+    # st = SerialThreadWrapper("COM3")
+    st = SerialThread("COM3")
     sleep(2)
     # d = bytearray(b'\xBB\x0B\xF3\x08\x02\x00\x00\x00\x02')
     # sum = sum(d)
@@ -169,14 +168,14 @@ if __name__ == '__main__':
     print("st", st)
     print("st.s", st.s)
     print("st.cc", st.cc)
-    print("st.call()", st.proxy())
+    print("st.call()", st.send())
     print("st.hardware_info", st.hardware_info())
     # st.call().led(2, 255, 0, 255)
-    st.proxy().read_hardware_setting()
+    st.send().read_hardware_setting()
     sleep(1)
-    st.proxy().read_multi_setting()
+    st.send().read_multi_setting()
     sleep(1)
-    st.proxy().read_single_setting()
+    st.send().read_single_setting()
     sleep(1)
     # st.call().takeoff(0)
     sleep(1)
