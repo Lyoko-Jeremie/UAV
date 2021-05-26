@@ -179,6 +179,8 @@ if __name__ == '__main__':
     sleep(0.5)
     st.send().takeoff(50)
     sleep(5)
+    st.send().up(50)
+    sleep(5)
     st.send().land()
     sleep(1)
     print("st.hardware_info", st.hardware_info())

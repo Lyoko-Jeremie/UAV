@@ -117,6 +117,44 @@ class CommandConstructor(CommandConstructorCore):
 
         pass
 
+    def move(self, direction: int, distance: int):
+        if direction < 0 or direction > 2:
+            raise ValueError("direction illegal")
+
+        params = bytearray(10)
+        pack_into("!B", params, 0, 0x02)
+        pack_into("!B", params, 1, direction)
+        pack_into("!h", params, 2, distance)
+        cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("cmd", cmd.hex(' '))
+        self.sendCommand(cmd)
+
+        pass
+
+    def up(self, distance: int):
+        self.move(0x01, distance)
+        pass
+
+    def down(self, distance: int):
+        self.move(0x02, distance)
+        pass
+
+    def forward(self, distance: int):
+        self.move(0x02, distance)
+        pass
+
+    def back(self, distance: int):
+        # TODO impl it
+        pass
+
+    def left(self, distance: int):
+        # TODO impl it
+        pass
+
+    def right(self, distance: int):
+        # TODO impl it
+        pass
+
     def read_multi_setting(self):
         return self.read_setting(0x02)
 
