@@ -84,7 +84,7 @@ class CommandConstructor(CommandConstructorCore):
 
     def led(self, mode: int, r: int, g: int, b: int):
         if mode < 0 or mode > 2:
-            raise ValueError("mode illegal")
+            raise ValueError("mode illegal", mode)
 
         params = bytearray(10)
         pack_into("!B", params, 0, 0x08)
@@ -93,7 +93,7 @@ class CommandConstructor(CommandConstructorCore):
         pack_into("!B", params, 3, g)
         pack_into("!B", params, 4, b)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
-        print("cmd", cmd.hex(' '))
+        print("led", cmd.hex(' '))
         self.sendCommand(cmd)
 
         pass
@@ -103,7 +103,7 @@ class CommandConstructor(CommandConstructorCore):
         pack_into("!B", params, 0, 0x01)
         pack_into("!h", params, 1, high)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
-        print("cmd", cmd.hex(' '))
+        print("takeoff", cmd.hex(' '))
         self.sendCommand(cmd)
 
         pass
@@ -112,21 +112,21 @@ class CommandConstructor(CommandConstructorCore):
         params = bytearray(10)
         pack_into("!B", params, 0, 0x00)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
-        print("cmd", cmd.hex(' '))
+        print("land", cmd.hex(' '))
         self.sendCommand(cmd)
 
         pass
 
     def move(self, direction: int, distance: int):
         if direction < 0 or direction > 2:
-            raise ValueError("direction illegal")
+            raise ValueError("direction illegal", direction)
 
         params = bytearray(10)
         pack_into("!B", params, 0, 0x02)
         pack_into("!B", params, 1, direction)
         pack_into("!h", params, 2, distance)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
-        print("cmd", cmd.hex(' '))
+        print("move", cmd.hex(' '))
         self.sendCommand(cmd)
 
         pass
@@ -153,6 +153,152 @@ class CommandConstructor(CommandConstructorCore):
 
     def right(self, distance: int):
         # TODO impl it
+        pass
+
+    def flip(self, direction: int, circle: int):
+        if direction < 0 or direction > 2:
+            raise ValueError("direction illegal", direction)
+        if circle != 1 and circle != 2:
+            raise ValueError("circle illegal", circle)
+
+        params = bytearray(10)
+        pack_into("!B", params, 0, 0x04)
+        pack_into("!B", params, 1, direction)
+        pack_into("!B", params, 2, circle)
+        cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("flip", cmd.hex(' '))
+        self.sendCommand(cmd)
+
+        pass
+
+    def flip_forward(self, circle: int):
+        self.flip(0x01, circle)
+        pass
+
+    def flip_back(self, circle: int):
+        self.flip(0x02, circle)
+        pass
+
+    def flip_left(self, circle: int):
+        # TODO impl it
+        pass
+
+    def flip_right(self, circle: int):
+        # TODO impl it
+        pass
+
+    def arrive(self, x: int, y: int, z: int):
+        # haven't test
+
+        params = bytearray(10)
+        pack_into("!B", params, 0, 0x03)
+        pack_into("!h", params, 1, x)
+        pack_into("!h", params, 3, y)
+        pack_into("!h", params, 5, z)
+        cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("arrive", cmd.hex(' '))
+        self.sendCommand(cmd)
+
+        pass
+
+    def rotate(self, degree: int):
+
+        params = bytearray(10)
+        pack_into("!B", params, 0, 0x05)
+        pack_into("!h", params, 1, degree)
+        cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("rotate", cmd.hex(' '))
+        self.sendCommand(cmd)
+
+        pass
+
+    def cw(self, degree: int):
+        if degree < 0:
+            raise ValueError("degree illegal", degree)
+        self.rotate(degree)
+        pass
+
+    def ccw(self, degree: int):
+        if degree < 0:
+            raise ValueError("degree illegal", degree)
+        self.rotate(degree)
+        pass
+
+    def speed(self, speed: int):
+        if speed < 0 or speed > 200:
+            raise ValueError("speed illegal", speed)
+
+        params = bytearray(10)
+        pack_into("!B", params, 0, 0x06)
+        pack_into("!h", params, 1, speed)
+        cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("speed", cmd.hex(' '))
+        self.sendCommand(cmd)
+
+        pass
+
+    def high(self, high: int):
+
+        params = bytearray(10)
+        pack_into("!B", params, 0, 0x07)
+        pack_into("!h", params, 1, high)
+        cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("high", cmd.hex(' '))
+        self.sendCommand(cmd)
+
+        pass
+
+    def airplane_mode(self, mode: int):
+        if mode < 0 or mode > 4:
+            raise ValueError("mode illegal", mode)
+
+        params = bytearray(10)
+        pack_into("!B", params, 0, 0x09)
+        pack_into("!B", params, 1, mode)
+        cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("airplane_mode", cmd.hex(' '))
+        self.sendCommand(cmd)
+
+        pass
+
+    def vision_mode(self, mode: int):
+        if mode < 0 or mode > 5:
+            raise ValueError("mode illegal", mode)
+
+        params = bytearray(10)
+        pack_into("!B", params, 0, 0x10)
+        pack_into("!B", params, 1, mode)
+        cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("vision_mode", cmd.hex(' '))
+        self.sendCommand(cmd)
+
+        pass
+
+    def hovering(self, ):
+
+        params = bytearray(10)
+        pack_into("!B", params, 0, 0xFE)
+        cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("hovering", cmd.hex(' '))
+        self.sendCommand(cmd)
+
+        pass
+
+    def vision_color(self, L_L: int, L_H: int, A_L: int, A_H: int, B_L: int, B_H: int,):
+
+        params = bytearray(10)
+        pack_into("!B", params, 0, 0x10)
+        pack_into("!B", params, 1, 0x06)
+        pack_into("!B", params, 2, L_L)
+        pack_into("!B", params, 3, L_H)
+        pack_into("!B", params, 4, A_L)
+        pack_into("!B", params, 5, A_H)
+        pack_into("!B", params, 6, B_L)
+        pack_into("!B", params, 7, B_H)
+        cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("vision_color", cmd.hex(' '))
+        self.sendCommand(cmd)
+
         pass
 
     def read_multi_setting(self):

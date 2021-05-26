@@ -62,10 +62,8 @@ def task_read(thead_local: ThreadLocal):
                 break
         except Empty:
             pass
-        # TODO read from serial port
+        # read from serial port
         d = thead_local.s.read(65535)
-        # print("read:", d)
-        # if len(d) > 0:
         thead_local.rdp.push(d)
     print("task_read done.")
     pass
@@ -181,6 +179,10 @@ if __name__ == '__main__':
     sleep(5)
     st.send().up(50)
     sleep(5)
+    # st.send().flip_forward(1)
+    # sleep(5)
+    # st.send().cw(90)
+    # sleep(5)
     st.send().land()
     sleep(1)
     print("st.hardware_info", st.hardware_info())
