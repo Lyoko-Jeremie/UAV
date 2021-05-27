@@ -14,19 +14,38 @@ class CmdType(Enum):
 
 
 class CommandConstructorCore:
+    """
+    this class impl core read functions
+    """
+
+    """
+    last order was generate
+    """
     order_last = 0
+    """
+    
+    """
     q_write: Queue = None
 
     def _order_count(self):
+        """
+        the order_count generator, it generate new order number
+        """
         self.order_last = (self.order_last + 1) % 127
         return self.order_last
         pass
 
     def _check_sum(self, header: bytearray, params: bytearray):
+        """
+        impl checksum algorithm
+        """
         return bytearray([sum(header + params) & 0xFF])
         pass
 
     def sendCommand(self, data: bytearray):
+        """
+        direct do the command bytearray send task
+        """
         self.q_write.put((QueueSignal.CMD, data), block=True)
         pass
 
@@ -35,6 +54,9 @@ class CommandConstructorCore:
         pass
 
     def join_cmd(self, type: CmdType, params: bytearray):
+        """
+        this function concat header+params+checksum to a bytearray for ready to send
+        """
         header = bytearray(b'\xBB\x00\x00')
         if type == CmdType.MULTI_SETTINGS:  # 编队设置 0xBB, 0x08, 0x04
             pack_into("!B", header, 1, 0x08)
@@ -75,6 +97,8 @@ class CommandConstructorCore:
 
 class CommandConstructor(CommandConstructorCore):
     """
+    this class extends CommandConstructorCore,
+    it impl all functions that direct construct command .
     TODO Implement All Command Methods On This Class
     """
 

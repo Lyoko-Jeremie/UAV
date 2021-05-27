@@ -90,8 +90,11 @@ class SingleSettingInfo:
 
 
 class ReadDataParser:
+    """
+    this class Parse data that comes from serial port.
+    """
+
     read_buffer: bytearray = bytearray()
-    split_buffer: List[bytearray] = []
     q: Queue = None
     m_base_info: BaseInfo = None
     m_sensor_info: SensorInfo = None
@@ -106,11 +109,17 @@ class ReadDataParser:
         pass
 
     def push(self, data: Union[bytearray, bytes]):
+        """
+        this method are used by `task_read` thread, it add new bytearray comes from serial port.
+        """
         self.read_buffer = self.read_buffer + data
         self.try_parse()
         pass
 
     def try_parse(self):
+        """
+        this method do the core task that split bytearray buffer stream into packages.
+        """
         while len(self.read_buffer) > 3:
             header = self.read_buffer[0:3]
             size = header[1]

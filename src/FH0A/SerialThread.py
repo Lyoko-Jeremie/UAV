@@ -26,15 +26,22 @@ class ThreadLocal:
 
 
 def task_write(thead_local: ThreadLocal):
+    """
+    serial port write worker thread, this function do the write task in a independent thread.
+    this function must run in a independent thread
+    :param thead_local: the thread local data object
+    """
     print("task_write")
     while True:
         sleep(0.1)
         try:
+            # check if exit signal comes from main thread
             if thead_local.exit_queue.get(block=False) is QueueSignal.SHUTDOWN:
                 break
         except Empty:
             pass
         try:
+            # check if new command comes from CommandConstructor
             d = thead_local.q.get(block=False, timeout=-1)
             if isinstance(d, tuple):
                 print("Tuple:", (d[0], d[1].hex(' ')))
@@ -45,6 +52,7 @@ def task_write(thead_local: ThreadLocal):
         except Empty:
             pass
         # send cmd
+        # must send multi time to ensure command are sent successfully
         if thead_local.latest_cmd is not None and len(thead_local.latest_cmd) > 0:
             # print("write:", thead_local.latest_cmd)
             thead_local.s.write(thead_local.latest_cmd)
@@ -54,22 +62,33 @@ def task_write(thead_local: ThreadLocal):
 
 
 def task_read(thead_local: ThreadLocal):
+    """
+    serial port read worker thread, this function do the write task in a independent thread.
+    this function must run in a independent thread
+    :param thead_local: the thread local data object
+    """
     print("task_read")
     while True:
         sleep(0.1)
         try:
+            # check if exit signal comes from main thread
             if thead_local.exit_queue.get(block=False) is QueueSignal.SHUTDOWN:
                 break
         except Empty:
             pass
         # read from serial port
         d = thead_local.s.read(65535)
+        # write new data to ReadDataParser
         thead_local.rdp.push(d)
     print("task_read done.")
     pass
 
 
 class SerialThreadCore:
+    """
+    the core function of serial control , this can run in main thread or a independent thread.
+    """
+
     s: serial.Serial = None
     port: str = None
     thead_local_write: ThreadLocal = None
@@ -97,10 +116,16 @@ class SerialThreadCore:
         pass
 
     def send_cmd(self, cmd: bytearray):
+        """this is a debug function, dont call it directly in normal"""
         self.q_write.put((QueueSignal.CMD, cmd))
         pass
 
     def shutdown(self):
+        """
+        this function safely shutdown serial port and the control thread,
+         it do all the cleanup task.
+        """
+        # send exit signal comes to worker thread
         self.thead_local_write.exit_queue.put(QueueSignal.SHUTDOWN)
         self.thead_local_read.exit_queue.put(QueueSignal.SHUTDOWN)
         self.thead_local_write.t.join()
@@ -130,6 +155,10 @@ class SerialThreadCore:
 
 
 class SerialThread(SerialThreadCore):
+    """
+    this class extends SerialThreadCore, and implements more useful functions
+    """
+
     cc: CommandConstructor = None
 
     def __init__(self, port: str):
