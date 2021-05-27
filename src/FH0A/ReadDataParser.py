@@ -2,6 +2,7 @@ from queue import Queue
 from struct import pack, unpack, pack_into, unpack_from
 from typing import List, Dict, Any, Tuple, Union, Literal
 from dataclasses import dataclass
+from threading import Lock
 
 Header_Base_Info = b'\xAA\x0D\x07'
 Header_Sensor_info = b'\xAA\x19\x30'
@@ -98,6 +99,7 @@ class ReadDataParser:
     m_hardware_info: HardwareInfo = None
     m_multi_setting_info: MultiSettingInfo = None
     m_single_setting_info: SingleSettingInfo = None
+    m_info_lock: Lock = Lock()
 
     def __init__(self, q_read):
         self.q = q_read
@@ -166,7 +168,7 @@ class ReadDataParser:
     def base_info(self, data: bytearray):
         # print("Base_Info", data.hex(' '))
         params = data[2:len(data) - 1]
-        self.m_base_info = BaseInfo(
+        m_base_info = BaseInfo(
             fly_id=unpack_from("!B", params, 1)[0],
             hardwareType=unpack_from("!B", params, 2)[0],
             fly_voltage=unpack_from("!h", params, 3)[0] * 100,
@@ -175,13 +177,16 @@ class ReadDataParser:
             self_test_flag=unpack_from("!H", params, 9)[0],
             setting_flag=unpack_from("!H", params, 11)[0]
         )
-        # print("self._base_info", self.m_base_info)
+        with self.m_info_lock:
+            self.m_base_info = m_base_info
+            pass
+        # print("self._base_info", m_base_info)
         pass
 
     def sensor_info(self, data: bytearray):
         # print("Sensor_info", data.hex(' '))
         params = data[2:len(data) - 1]
-        self.m_sensor_info = SensorInfo(
+        m_sensor_info = SensorInfo(
             flow_x=unpack_from("!h", params, 1)[0],
             flow_y=unpack_from("!h", params, 3)[0],
             flow_qualt=unpack_from("!B", params, 5)[0],
@@ -198,14 +203,17 @@ class ReadDataParser:
             mv_mode=unpack_from("!B", params, 23)[0],
             obsDir=unpack_from("!B", params, 24)[0],
         )
-        # print("self._sensor_info", self.m_sensor_info)
+        with self.m_info_lock:
+            self.m_sensor_info = m_sensor_info
+            pass
+        # print("self._sensor_info", m_sensor_info)
         pass
 
     def vision_sensor_info(self, data: bytearray):
         # print("Vision_Sensor_info", data.hex(' '))
         # TODO
         params = data[2:len(data) - 1]
-        self.m_vision_sensor_info = VisionSensorInfo(
+        m_vision_sensor_info = VisionSensorInfo(
             lock_flag=unpack_from("!B", params, 1)[0],
             reserved0=unpack_from("!B", params, 2)[0],
             rol=unpack_from("!h", params, 3)[0] * 100,
@@ -217,7 +225,10 @@ class ReadDataParser:
             loc_y=unpack_from("!h", params, 16)[0],
             reserved1=unpack_from("!h", params, 18)[0],
         )
-        # print("self._vision_sensor_info", self.m_vision_sensor_info)
+        with self.m_info_lock:
+            self.m_vision_sensor_info = m_vision_sensor_info
+            pass
+        # print("self._vision_sensor_info", m_vision_sensor_info)
         pass
 
     def other(self, data: bytearray):
@@ -228,38 +239,70 @@ class ReadDataParser:
     def hardware_info(self, data: bytearray):
         # print("hardware_info", data.hex(' '))
         params = data[2:len(data) - 1]
-        self.m_hardware_info = HardwareInfo(
+        m_hardware_info = HardwareInfo(
             hardtype=unpack_from("!B", params, 1)[0],
             hardware=unpack_from("!H", params, 2)[0],
             software=unpack_from("!I", params, 4)[0],
             iap_ware=unpack_from("!H", params, 8)[0],
         )
-        print("self._hardware_info", self.m_hardware_info)
+        with self.m_info_lock:
+            self.m_hardware_info = m_hardware_info
+            pass
+        print("self._hardware_info", m_hardware_info)
         pass
 
     def multi_setting_info(self, data: bytearray):
         # print("multi_setting_info", data.hex(' '))
         # TODO
         params = data[2:len(data) - 1]
-        self.m_multi_setting_info = MultiSettingInfo(
+        m_multi_setting_info = MultiSettingInfo(
             mode=unpack_from("!B", params, 1)[0],
             id=unpack_from("!B", params, 2)[0],
             channel=unpack_from("!B", params, 3)[0],
             addr=unpack_from("!I", params, 4)[0],
         )
-        print("self._multi_setting_info", self.m_multi_setting_info)
+        with self.m_info_lock:
+            self.m_multi_setting_info = m_multi_setting_info
+            pass
+        print("self._multi_setting_info", m_multi_setting_info)
         pass
 
     def single_setting_info(self, data: bytearray):
         # print("single_setting_info", data.hex(' '))
         # TODO
         params = data[2:len(data) - 1]
-        self.m_single_setting_info = SingleSettingInfo(
+        m_single_setting_info = SingleSettingInfo(
             mode=unpack_from("!B", params, 1)[0],
             channel=unpack_from("!B", params, 2)[0],
             addr=unpack_from("!I", params, 3)[0],
         )
-        print("self._single_setting_info", self.m_single_setting_info)
+        with self.m_info_lock:
+            self.m_single_setting_info = m_single_setting_info
+            pass
+        print("self._single_setting_info", m_single_setting_info)
         pass
+
+    def get_base_info(self):
+        with self.m_info_lock:
+            return self.m_base_info
+
+    def get_sensor_info(self):
+        with self.m_info_lock:
+            return self.m_sensor_info
+
+    def get_vision_sensor_info(self):
+        return self.m_vision_sensor_info
+
+    def get_hardware_info(self):
+        with self.m_info_lock:
+            return self.m_hardware_info
+
+    def get_multi_setting_info(self):
+        with self.m_info_lock:
+            return self.m_multi_setting_info
+
+    def get_single_setting_info(self):
+        with self.m_info_lock:
+            return self.m_single_setting_info
 
     pass

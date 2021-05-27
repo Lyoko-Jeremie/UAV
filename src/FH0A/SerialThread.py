@@ -109,22 +109,22 @@ class SerialThreadCore:
         pass
 
     def base_info(self) -> BaseInfo:
-        return self.thead_local_read.rdp.m_base_info
+        return self.thead_local_read.rdp.get_base_info()
 
     def sensor_info(self) -> SensorInfo:
-        return self.thead_local_read.rdp.m_sensor_info
+        return self.thead_local_read.rdp.get_sensor_info()
 
     def vision_sensor_info(self) -> VisionSensorInfo:
-        return self.thead_local_read.rdp.m_vision_sensor_info
+        return self.thead_local_read.rdp.get_vision_sensor_info()
 
     def hardware_info(self) -> HardwareInfo:
-        return self.thead_local_read.rdp.m_hardware_info
+        return self.thead_local_read.rdp.get_hardware_info()
 
     def single_setting_info(self) -> SingleSettingInfo:
-        return self.thead_local_read.rdp.m_single_setting_info
+        return self.thead_local_read.rdp.get_single_setting_info()
 
     def multi_setting_info(self) -> MultiSettingInfo:
-        return self.thead_local_read.rdp.m_multi_setting_info
+        return self.thead_local_read.rdp.get_multi_setting_info()
 
     pass
 
