@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from threading import Lock
 
 Header_Base_Info = b'\xAA\x0D\x07'
-Header_Sensor_info = b'\xAA\x19\x30'
-Header_Vision_Sensor_info = b'\xAA\x14\x01'
+Header_Vision_Sensor_info = b'\xAA\x19\x30'
+Header_Sensor_info = b'\xAA\x14\x01'
 Header_Others = '\xAA\x09\xf1'
 Header_Others_Hardware_Info = '\xAA\x00\x00'
 Header_Others_MultiSetting_Info = '\xAA\x00\x04'
@@ -26,6 +26,23 @@ class BaseInfo:
 
 @dataclass
 class SensorInfo:
+    lock_flag: int  # 0上锁状态1解锁状态
+    reserved0: int  # 预留
+
+    rol: int  # 横滚角，单位：度
+    pit: int  # 俯仰角，单位：度
+    yaw: int  # 航向角，单位：度
+    high: int  # 高度，单位：厘米
+
+    id: int  # 固定是0，目前没什么意义
+
+    loc_x: int  # 当前x坐标，单位：厘米
+    loc_y: int  # 当前y坐标，单位：厘米
+    reserved1: int  # 预留
+
+
+@dataclass
+class VisionSensorInfo:
     flow_x: int  # 光流x轴数据
     flow_y: int  # 光流y轴数据
     flow_qualt: int  # 光流数据可靠性指数
@@ -47,23 +64,6 @@ class SensorInfo:
     mv_mode: int  # 当前视觉模块的工作模式
 
     obsDir: int  # 非零表示检测到了障碍物
-
-
-@dataclass
-class VisionSensorInfo:
-    lock_flag: int  # 0上锁状态1解锁状态
-    reserved0: int  # 预留
-
-    rol: int  # 横滚角，单位：度
-    pit: int  # 俯仰角，单位：度
-    yaw: int  # 航向角，单位：度
-    high: int  # 高度，单位：厘米
-
-    id: int  # 固定是0，目前没什么意义
-
-    loc_x: int  # 当前x坐标，单位：厘米
-    loc_y: int  # 当前y坐标，单位：厘米
-    reserved1: int  # 预留
 
 
 @dataclass
@@ -129,15 +129,15 @@ class ReadDataParser:
                 # print("Header_Base_Info", 0, size, len(data), data)
                 self.base_info(data)
                 pass
-            elif header == Header_Sensor_info:
-                data = self.read_buffer[0: size + 3]
-                # print("Header_Sensor_info", 0, size, len(data), data)
-                self.sensor_info(data)
-                pass
             elif header == Header_Vision_Sensor_info:
                 data = self.read_buffer[0: size + 3]
                 # print("Header_Vision_Sensor_info", 0, size, len(data), data)
                 self.vision_sensor_info(data)
+                pass
+            elif header == Header_Sensor_info:
+                data = self.read_buffer[0: size + 3]
+                # print("Header_Sensor_info", 0, size, len(data), data)
+                self.sensor_info(data)
                 pass
             elif header == Header_Others:
                 data = self.read_buffer[0: size + 3]
@@ -192,10 +192,10 @@ class ReadDataParser:
         # print("self._base_info", m_base_info)
         pass
 
-    def sensor_info(self, data: bytearray):
-        # print("Sensor_info", data.hex(' '))
+    def vision_sensor_info(self, data: bytearray):
+        # print("vision_sensor_info", data.hex(' '))
         params = data[2:len(data) - 1]
-        m_sensor_info = SensorInfo(
+        m_vision_sensor_info = VisionSensorInfo(
             flow_x=unpack_from("!h", params, 1)[0],
             flow_y=unpack_from("!h", params, 3)[0],
             flow_qualt=unpack_from("!B", params, 5)[0],
@@ -213,16 +213,16 @@ class ReadDataParser:
             obsDir=unpack_from("!B", params, 24)[0],
         )
         with self.m_info_lock:
-            self.m_sensor_info = m_sensor_info
+            self.m_vision_sensor_info = m_vision_sensor_info
             pass
-        # print("self._sensor_info", m_sensor_info)
+        # print("self._vision_sensor_info", m_vision_sensor_info)
         pass
 
-    def vision_sensor_info(self, data: bytearray):
-        # print("Vision_Sensor_info", data.hex(' '))
+    def sensor_info(self, data: bytearray):
+        # print("sensor_info", data.hex(' '))
         # TODO
         params = data[2:len(data) - 1]
-        m_vision_sensor_info = VisionSensorInfo(
+        m_sensor_info = SensorInfo(
             lock_flag=unpack_from("!B", params, 1)[0],
             reserved0=unpack_from("!B", params, 2)[0],
             rol=unpack_from("!h", params, 3)[0] * 100,
@@ -235,9 +235,9 @@ class ReadDataParser:
             reserved1=unpack_from("!h", params, 18)[0],
         )
         with self.m_info_lock:
-            self.m_vision_sensor_info = m_vision_sensor_info
+            self.m_sensor_info = m_sensor_info
             pass
-        # print("self._vision_sensor_info", m_vision_sensor_info)
+        # print("self._sensor_info", m_sensor_info)
         pass
 
     def other(self, data: bytearray):
@@ -295,12 +295,13 @@ class ReadDataParser:
         with self.m_info_lock:
             return self.m_base_info
 
+    def get_vision_sensor_info(self):
+        with self.m_info_lock:
+            return self.m_vision_sensor_info
+
     def get_sensor_info(self):
         with self.m_info_lock:
             return self.m_sensor_info
-
-    def get_vision_sensor_info(self):
-        return self.m_vision_sensor_info
 
     def get_hardware_info(self):
         with self.m_info_lock:
