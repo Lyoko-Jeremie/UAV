@@ -7,10 +7,10 @@ from threading import Lock
 Header_Base_Info = b'\xAA\x0D\x07'
 Header_Vision_Sensor_info = b'\xAA\x19\x30'
 Header_Sensor_info = b'\xAA\x14\x01'
-Header_Others = '\xAA\x09\xf1'
-Header_Others_Hardware_Info = '\xAA\x00\x00'
-Header_Others_MultiSetting_Info = '\xAA\x00\x04'
-Header_Others_SingleSetting_Info = '\xAA\x00\x05'
+Header_Others = b'\xAA\x09\xf1'
+Header_Others_Hardware_Info = b'\xAA\x00\x00'
+Header_Others_MultiSetting_Info = b'\xAA\x00\x04'
+Header_Others_SingleSetting_Info = b'\xAA\x00\x05'
 
 
 @dataclass
@@ -123,6 +123,9 @@ class ReadDataParser:
         while len(self.read_buffer) > 3:
             header = self.read_buffer[0:3]
             size = header[1]
+            if len(self.read_buffer) <= size + 3:
+                break
+
             # print("header", header, size, header[0], header[1], header[2])
             if header == Header_Base_Info:
                 data = self.read_buffer[0: size + 3]
@@ -165,8 +168,6 @@ class ReadDataParser:
                 pass
 
             self.read_buffer = self.read_buffer[size + 3:]
-            if len(self.read_buffer) <= size + 3:
-                break
             # if len(self.read_buffer) > size + 3:
             #     self.read_buffer = self.read_buffer[size + 3:]
             #     self.try_parse()
