@@ -147,18 +147,18 @@ class ReadDataParser:
                 # print("Header_Others", 0, size, len(data), data)
                 self.other(data)
                 pass
-            elif header[0] == b'\xAA':
+            elif header[0] == 170:  # b'\xAA':
                 flag = header[2]
                 data = self.read_buffer[0: size + 3]
-                if flag == b'\x00':
+                if flag == 0:  # b'\x00':
                     # Header_Others_Hardware_Info like
                     self.hardware_info(data)
                     pass
-                elif flag == b'\x04':
+                elif flag == 4:  # b'\x04':
                     # Header_Others_MultiSetting_Info like
                     self.multi_setting_info(data)
                     pass
-                elif flag == b'\x05':
+                elif flag == 5:  # b'\x05':
                     # Header_Others_SingleSetting_Info like
                     self.single_setting_info(data)
                     pass
