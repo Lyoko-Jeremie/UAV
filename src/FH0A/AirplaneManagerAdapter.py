@@ -82,8 +82,8 @@ class AirplaneController(object):
         self.s.send().hovering()
         pass
 
-    def hover(self, high: int):
-        self.s.send().hovering(high)
+    def hover(self):
+        self.s.send().hovering()
         pass
 
     pass

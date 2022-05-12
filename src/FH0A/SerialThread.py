@@ -96,8 +96,8 @@ class SerialThreadCore:
 
     def __init__(self, port: str):
         self.port = port
-        self.q_write = Queue()
-        self.q_read = Queue()
+        self.q_write: Queue = Queue()
+        self.q_read: Queue = Queue()
         self.s = serial.Serial(port, baudrate=115200, timeout=0.01)
 
         self.thead_local_write = ThreadLocal()
