@@ -2,7 +2,7 @@ from queue import Queue
 from struct import pack, unpack, pack_into, unpack_from
 from enum import Enum
 
-from QueueSignal import QueueSignal
+from .QueueSignal import QueueSignal
 
 
 class CmdType(Enum):

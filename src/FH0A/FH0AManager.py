@@ -1,4 +1,4 @@
-from SerialThread import SerialThread
+from .SerialThread import SerialThread
 from typing import List, Dict, Any, Tuple, Union, Literal
 
 

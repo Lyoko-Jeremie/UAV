@@ -3,10 +3,10 @@ from queue import Queue, Empty
 from time import sleep
 from threading import Thread
 
-from ReadDataParser import ReadDataParser, BaseInfo, SensorInfo, VisionSensorInfo, HardwareInfo, SingleSettingInfo, \
+from .ReadDataParser import ReadDataParser, BaseInfo, SensorInfo, VisionSensorInfo, HardwareInfo, SingleSettingInfo, \
     MultiSettingInfo
-from CommandConstructor import CommandConstructor
-from QueueSignal import QueueSignal
+from .CommandConstructor import CommandConstructor
+from .QueueSignal import QueueSignal
 
 
 class ThreadLocal:

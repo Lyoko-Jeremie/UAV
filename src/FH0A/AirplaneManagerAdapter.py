@@ -1,6 +1,6 @@
 from typing import Dict, Optional
 
-from SerialThread import SerialThread
+from .SerialThread import SerialThread
 
 
 class AirplaneController(object):
@@ -183,7 +183,7 @@ class AirplaneManager(object):
         return {'ok': True, 'r': ''}
 
     def get_airplane(self, id: str) -> Optional[AirplaneController]:
-        return self.get_airplane(id)
+        return self.get_airplane_extended(id)
         pass
 
     def get_airplane_extended(self, id: str) -> Optional[AirplaneControllerExtended]:
