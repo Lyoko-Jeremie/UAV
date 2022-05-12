@@ -78,9 +78,9 @@ class AirplaneController(object):
     #     self.s.send().rainbow(r, g, b)
     #     pass
 
-    # def stop(self):
-    #     self.s.send().stop()
-    #     pass
+    def stop(self):
+        self.s.send().hovering()
+        pass
 
     def hover(self, high: int):
         self.s.send().hovering(high)
