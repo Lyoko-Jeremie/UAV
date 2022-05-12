@@ -142,7 +142,7 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def move(self, direction: int, distance: int):
-        if direction < 0 or direction > 2:
+        if direction < 0 or direction > 6:
             raise ValueError("direction illegal", direction)
 
         params = bytearray(10)
@@ -168,19 +168,19 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def back(self, distance: int):
-        # TODO impl it
+        self.move(0x04, distance)
         pass
 
     def left(self, distance: int):
-        # TODO impl it
+        self.move(0x05, distance)
         pass
 
     def right(self, distance: int):
-        # TODO impl it
+        self.move(0x06, distance)
         pass
 
     def flip(self, direction: int, circle: int):
-        if direction < 0 or direction > 2:
+        if direction < 0 or direction > 4:
             raise ValueError("direction illegal", direction)
         if circle != 1 and circle != 2:
             raise ValueError("circle illegal", circle)
@@ -204,11 +204,11 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def flip_left(self, circle: int):
-        # TODO impl it
+        self.flip(0x03, circle)
         pass
 
     def flip_right(self, circle: int):
-        # TODO impl it
+        self.flip(0x04, circle)
         pass
 
     def arrive(self, x: int, y: int, z: int):
