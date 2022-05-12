@@ -245,7 +245,7 @@ class CommandConstructor(CommandConstructorCore):
     def ccw(self, degree: int):
         if degree < 0:
             raise ValueError("degree illegal", degree)
-        self.rotate(degree)
+        self.rotate(-degree)
         pass
 
     def speed(self, speed: int):
