@@ -388,4 +388,4 @@ fh.land(e)
 fh.land(f)
 fh.sleep(3)
 
-
+fh.destroy()
