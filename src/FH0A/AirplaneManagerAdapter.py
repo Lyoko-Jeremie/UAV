@@ -99,23 +99,23 @@ class AirplaneControllerExtended(AirplaneController):
         self.s.send().move(direction, distance)
         pass
 
-    def flip(self, direction: int, circle: int):
+    def flip(self, direction: int, circle: int = 1):
         self.s.send().flip(direction, circle)
         pass
 
-    def flip_forward(self, circle: int):
+    def flip_forward(self, circle: int = 1):
         self.s.send().flip_forward(circle)
         pass
 
-    def flip_back(self, circle: int):
+    def flip_back(self, circle: int = 1):
         self.s.send().flip_back(circle)
         pass
 
-    def flip_left(self, circle: int):
+    def flip_left(self, circle: int = 1):
         self.s.send().flip_left(circle)
         pass
 
-    def flip_right(self, circle: int):
+    def flip_right(self, circle: int = 1):
         self.s.send().flip_right(circle)
         pass
 
