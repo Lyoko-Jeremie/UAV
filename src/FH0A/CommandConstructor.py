@@ -221,7 +221,6 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def arrive(self, x: int, y: int, z: int):
-        # haven't test
 
         params = bytearray(10)
         pack_into("!B", params, 0, 0x03)
