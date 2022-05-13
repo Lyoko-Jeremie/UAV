@@ -199,6 +199,12 @@ class AirplaneManager(object):
         return None
         pass
 
+    def destroy(self):
+        for i in self.airplanes_table.values():
+            i.shutdown()
+            pass
+        self.airplanes_table = {}
+
 
 airplane_manager_singleton = AirplaneManager()
 

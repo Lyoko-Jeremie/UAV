@@ -9,6 +9,10 @@ class FH0A:
         sleep(time)
         pass
 
+    def destroy(self):
+        self.airs.destroy()
+        pass
+
     def add_uav(self, port: str):
         self.airs.get_airplane_extended(port)
         pass
