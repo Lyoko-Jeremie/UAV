@@ -78,11 +78,11 @@ class FH0A:
     def led(self, port: str, r: int, g: int, b: int):
         self.p(port).led(r, g, b)
 
-    # def bln(self, port: str, r: int, g: int, b: int):
-    #     self.p(port).bln(r, g, b)
+    def bln(self, port: str, r: int, g: int, b: int):
+        self.p(port).bln(r, g, b)
 
-    # def rainbow(self, port: str, r: int, g: int, b: int):
-    #     self.p(port).rainbow(r, g, b)
+    def rainbow(self, port: str, r: int, g: int, b: int):
+        self.p(port).rainbow(r, g, b)
 
     def mode(self, port: str, mode: int):
         self.p(port).airplane_mode(mode)

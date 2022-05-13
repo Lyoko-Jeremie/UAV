@@ -66,17 +66,17 @@ class AirplaneController(object):
         self.s.send().high(high)
         pass
 
-    def led(self, mode: int, r: int, g: int, b: int):
-        self.s.send().led(mode, r, g, b)
+    def led(self, r: int, g: int, b: int):
+        self.s.send().led(r, g, b)
         pass
 
-    # def bln(self, r: int, g: int, b: int):
-    #     self.s.send().bln(r, g, b)
-    #     pass
+    def bln(self, r: int, g: int, b: int):
+        self.s.send().bln(r, g, b)
+        pass
 
-    # def rainbow(self, r: int, g: int, b: int):
-    #     self.s.send().rainbow(r, g, b)
-    #     pass
+    def rainbow(self, r: int, g: int, b: int):
+        self.s.send().rainbow(r, g, b)
+        pass
 
     def stop(self):
         self.s.send().hovering()

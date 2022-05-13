@@ -106,7 +106,16 @@ class CommandConstructor(CommandConstructorCore):
         super().__init__(q_write)
         pass
 
-    def led(self, mode: int, r: int, g: int, b: int):
+    def led(self, r: int, g: int, b: int):
+        self._led(0x00, r, g, b)
+
+    def bln(self, r: int, g: int, b: int):
+        self._led(0x01, r, g, b)
+
+    def rainbow(self, r: int, g: int, b: int):
+        self._led(0x02, r, g, b)
+
+    def _led(self, mode: int, r: int, g: int, b: int):
         if mode < 0 or mode > 2:
             raise ValueError("mode illegal", mode)
 
@@ -308,7 +317,7 @@ class CommandConstructor(CommandConstructorCore):
 
         pass
 
-    def vision_color(self, L_L: int, L_H: int, A_L: int, A_H: int, B_L: int, B_H: int,):
+    def vision_color(self, L_L: int, L_H: int, A_L: int, A_H: int, B_L: int, B_H: int, ):
 
         params = bytearray(10)
         pack_into("!B", params, 0, 0x10)
