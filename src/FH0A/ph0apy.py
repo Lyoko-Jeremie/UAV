@@ -1,8 +1,13 @@
+from time import sleep
 from .AirplaneManagerAdapter import get_airplane_manager, AirplaneManager
 
 
 class FH0A:
     airs: AirplaneManager = get_airplane_manager()
+
+    def sleep(self, time):
+        sleep(time)
+        pass
 
     def add_uav(self, port: str):
         self.airs.get_airplane_extended(port)
