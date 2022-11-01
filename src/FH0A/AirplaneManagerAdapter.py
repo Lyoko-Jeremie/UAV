@@ -1,9 +1,16 @@
+"""
+此文件是使用FH0A库对PhantasyIslandPythonRemoteControl库的模拟，
+目的是尽可能使得使用PhantasyIslandPythonRemoteControl库编写的代码可以在只修改import导入表的情况下直接调用FH0A库对应的功能
+"""
 from typing import Dict, Optional
 
 from .SerialThread import SerialThread
 
 
 class AirplaneController(object):
+    """
+    此类是到PhantasyIslandPythonRemoteControl库中AirplaneController的适配器，是对SerialThread的wrapper
+    """
     s: SerialThread
 
     def __init__(self, port):
@@ -90,6 +97,9 @@ class AirplaneController(object):
 
 
 class AirplaneControllerExtended(AirplaneController):
+    """
+    此类在AirplaneController的基础上添加了FH0A特有的功能及函数
+    """
 
     def airplane_mode(self, mode: int):
         self.s.send().airplane_mode(mode)
@@ -171,6 +181,9 @@ class AirplaneControllerExtended(AirplaneController):
 
 
 class AirplaneManager(object):
+    """
+    此类是到PhantasyIslandPythonRemoteControl库中AirplaneManager的适配器
+    """
     airplanes_table: Dict[str, AirplaneControllerExtended] = {}
 
     def ping(self):

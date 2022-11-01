@@ -44,6 +44,15 @@ class CommandConstructorCore:
 
     def sendCommand(self, data: bytearray):
         """
+        The sendCommand function accepts a cmd bytearray as input and adds it to the queue of commands
+        to be sent to the drone.  The function does not return any values.
+
+        :param self: Access the class attributes
+        :param data:bytearray: Send the command to the device
+        :return: The number of bytes written to the serial port
+        :doc-author: Jeremie
+        """
+        """
         direct do the command bytearray send task
         """
         self.q_write.put((QueueSignal.CMD, data), block=True)
@@ -54,6 +63,17 @@ class CommandConstructorCore:
         pass
 
     def join_cmd(self, type: CmdType, params: bytearray):
+        """
+        The join_cmd function concatenates the header, params and checksum to a cmd bytearray to let it become a valid serial cmd package.
+        The function is called in the send_cmd function.
+
+
+        :param self: Access the attributes and methods of the class in python
+        :param type:CmdType: Distinguish the different commands
+        :param params:bytearray: Pass the parameters of a command
+        :return: A bytearray
+        :doc-author: Jeremie
+        """
         """
         this function concat header+params+checksum to a bytearray for ready to send
         """
@@ -281,7 +301,20 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def airplane_mode(self, mode: int):
-        if mode < 0 or mode > 4:
+        """
+        The airplane_mode function is used to set the airplane mode on the airplane.
+        The function takes one parameter, which is an integer that represents a specific state for airplane mode.
+        0: Airplane Mode Off (default)
+        1 - Normal Mode (default)
+        2 - Line follow Mode
+        3 - Follow Mode
+        4 - Single Mode
+
+        :param self: Access attributes of the class
+        :param mode:int: Specify which mode the airplane should be set to
+        :doc-author: Trelent
+        """
+        if mode < 0 or mode > 5:
             raise ValueError("mode illegal", mode)
 
         params = bytearray(10)
@@ -294,11 +327,24 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def vision_mode(self, mode: int):
+        """
+        The vision_mode function is used to set the vision detect mode on the airplane.
+        The function takes one parameter, which is an integer that represents a specific state:
+        1 - Point detect Mode
+        2 - Line detect Mode
+        3 - Tag detect Mode
+        4 - Qrcode detect Mode
+        5 - LineCode detect Mode
+
+        :param self: Access the object's attributes and methods
+        :param mode:int: Set the airplane mode to 1, 2, 3, 4 or 5
+        :doc-author: Jeremie
+        """
         if mode < 0 or mode > 5:
             raise ValueError("mode illegal", mode)
 
         params = bytearray(10)
-        pack_into("!B", params, 0, 0x10)
+        pack_into("!B", params, 0, 0x0A)
         pack_into("!B", params, 1, mode)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("vision_mode", cmd.hex(' '))
@@ -317,9 +363,27 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def vision_color(self, L_L: int, L_H: int, A_L: int, A_H: int, B_L: int, B_H: int, ):
+        """
+        The vision_color function set the airplane to color detect mode, set which color need to detect.
+        The function takes in 6 integers, L_L, L_H, A_L, A_H, B_L and B_H.
+        the params is Lab color space.
+        The first two integers are for Low values and High values of lightness (0-255).
+        The next two integers are for Low values and High values of greeness (0-255).
+        The last two integers are for Low values and High Values of blueness (0-255).
+
+
+        :param self: Access the variables and methods in the class
+        :param L_L:int: Set the lower bound of the lightness value
+        :param L_H:int: Set the upper bound of the lightness value
+        :param A_L:int: Set the lower bound of the color range for a channel
+        :param A_H:int: Set the upper bound of the color range for a channel
+        :param B_L:int: Set the lower bound of the color range for b channel
+        :param B_H:int: Set the upper bound of the color range for b channel
+        :doc-author: Jeremie
+        """
 
         params = bytearray(10)
-        pack_into("!B", params, 0, 0x10)
+        pack_into("!B", params, 0, 0x0A)
         pack_into("!B", params, 1, 0x06)
         pack_into("!B", params, 2, L_L)
         pack_into("!B", params, 3, L_H)
@@ -334,15 +398,42 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def read_multi_setting(self):
+        """
+        The read_multi_setting function send a read multi setting request to the drone.
+        After call this function, you can read the multi setting.
+
+        :doc-author: Jeremie
+        """
         return self.read_setting(0x02)
 
     def read_single_setting(self):
+        """
+        The read_single_setting function send a read single setting request to the drone.
+        After call this function, you can read the single setting.
+
+        :doc-author: Jeremie
+        """
         return self.read_setting(0x04)
 
     def read_hardware_setting(self):
+        """
+        The read_hardware_setting function send a read hardware setting request to the device.
+        After call this function, you can read the hardware setting.
+
+        :doc-author: Jeremie
+        """
         return self.read_setting(0xA0)
 
     def read_setting(self, mode: int):
+        """
+        The read_setting function send a read setting request to the device.
+        The mode parameter is an integer that specifies which setting to read.
+
+
+        :param self: Reference the class instance
+        :param mode:int: Specify which setting to read
+        :doc-author: Jeremie
+        """
         params = bytearray(1)
         pack_into("!B", params, 0, mode)
         cmd = self.join_cmd(CmdType.READ_SETTINGS, params)

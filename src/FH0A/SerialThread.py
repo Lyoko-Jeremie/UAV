@@ -95,6 +95,18 @@ class SerialThreadCore:
     thead_local_read: ThreadLocal = None
 
     def __init__(self, port: str):
+        """
+        The __init__ function is called when an instance of the class is created.
+        It initializes attributes that are specific to each instance, and sets up any
+        internal state necessary. In this case, it creates a serial port object and two
+        queues for sending data to the write thread and receiving data from the read
+        thread.
+
+        :param self: Reference the object instance
+        :param port:str: Specify which port the serial connection is made on
+        :return: Nothing
+        :doc-author: Trelent
+        """
         self.port = port
         self.q_write: Queue = Queue()
         self.q_read: Queue = Queue()
@@ -116,14 +128,14 @@ class SerialThreadCore:
         pass
 
     def send_cmd(self, cmd: bytearray):
-        """this is a debug function, dont call it directly in normal"""
+        """this is a debug function, don't call it directly in normal"""
         self.q_write.put((QueueSignal.CMD, cmd))
         pass
 
     def shutdown(self):
         """
         this function safely shutdown serial port and the control thread,
-         it do all the cleanup task.
+        it does all the cleanup task.
         """
         # send exit signal comes to worker thread
         self.thead_local_write.exit_queue.put(QueueSignal.SHUTDOWN)
@@ -134,21 +146,68 @@ class SerialThreadCore:
         pass
 
     def base_info(self) -> BaseInfo:
+        """
+        The base_info function returns a BaseInfo object.
+
+        :param self: Access the instance of the class
+        :return: The base info of the drone
+        :doc-author: Trelent
+        """
         return self.thead_local_read.rdp.get_base_info()
 
     def sensor_info(self) -> SensorInfo:
+        """
+        The sensor_info function returns a SensorInfo object.
+
+        :param self: Access the class attributes
+        :return: The sensor information of the robot
+        :doc-author: Jeremie
+        """
         return self.thead_local_read.rdp.get_sensor_info()
 
     def vision_sensor_info(self) -> VisionSensorInfo:
+        """
+        The vision_sensor_info function returns a VisionSensorInfo object.
+
+        :param self: Access the class variables of the object
+        :return: A visionsensorinfo object
+        :doc-author: Jeremie
+        """
         return self.thead_local_read.rdp.get_vision_sensor_info()
 
     def hardware_info(self) -> HardwareInfo:
+        """
+        The hardware_info function returns a HardwareInfo object containing information about the hardware of the drone
+        running this program.
+        Must call `CommandConstructor.read_hardware_setting` function before calling this function.
+
+        :param self: Access the class attributes
+        :return: The hardware information of the drone
+        :doc-author: Jeremie
+        """
         return self.thead_local_read.rdp.get_hardware_info()
 
     def single_setting_info(self) -> SingleSettingInfo:
+        """
+        The single_setting_info function returns a SingleSettingInfo object.
+        Must call `CommandConstructor.read_single_setting` function before calling this function.
+
+        :param self: Access the attributes and methods of the class
+        :return: The singlesettinginfo object of the current thread
+        :doc-author: Trelent
+        """
         return self.thead_local_read.rdp.get_single_setting_info()
 
     def multi_setting_info(self) -> MultiSettingInfo:
+        """
+        The multi_setting_info function returns a MultiSettingInfo object.
+        Must call `CommandConstructor.read_multi_setting` function before calling this function.
+
+
+        :param self: Access the class attributes
+        :return: A multisettinginfo object
+        :doc-author: Trelent
+        """
         return self.thead_local_read.rdp.get_multi_setting_info()
 
     pass
