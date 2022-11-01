@@ -304,7 +304,6 @@ class CommandConstructor(CommandConstructorCore):
         """
         The airplane_mode function is used to set the airplane mode on the airplane.
         The function takes one parameter, which is an integer that represents a specific state for airplane mode.
-        0: Airplane Mode Off (default)
         1 - Normal Mode (default)
         2 - Line follow Mode
         3 - Follow Mode
