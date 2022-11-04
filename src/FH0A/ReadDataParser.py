@@ -110,14 +110,16 @@ class VisionSensorInfo:
     flow_qualt: int
         # 光流数据可靠性指数
 
+    # 以下内容仅在 点检测 模式下才有数据
     dot_x: int
         # 检测到点的x轴坐标
     dot_y: int
         # 检测到点的y轴坐标
     is_dot_ok: int
         # 是否检测到点，非零表示检测到了。
-        # those are only contain valid values on line detect mode, you need call `CommandConstructor.vision_mode(1)` to enable it.
+        # those are only contain valid values in line detect mode, you need call `CommandConstructor.vision_mode(1)` to enable it.
 
+    # 以下内容仅在 线检测 模式下才有数据
     line_x: int
         # 检测到竖线的坐标
     line_y: int
@@ -129,8 +131,9 @@ class VisionSensorInfo:
     line_flag: int
         # 是否检测到线的标志
         # （bit0=1表示前方检测到线，bit1=1表示后方检测到线，bit2=1表示左方检测到线，bit3=1表示右方检测到线）
-        # those are only contain valid values on line detect mode, you need call `CommandConstructor.vision_mode(2)` to enable it.
+        # those are only contain valid values in line detect mode, you need call `CommandConstructor.vision_mode(2)` to enable it.
 
+    # 以下内容仅在 标签检测 模式下才有数据
     tag_id: int
         # 检测到的标签编号
     is_tag_ok: int
