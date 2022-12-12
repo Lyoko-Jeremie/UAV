@@ -23,6 +23,7 @@ class AirplaneController(object):
         pass
 
     def land(self, ):
+        """降落"""
         self.s.send().land()
         pass
 
@@ -102,7 +103,7 @@ class AirplaneController(object):
         pass
 
     def stop(self):
-        """停桨"""
+        """悬停"""
         self.s.send().hovering()
         pass
 
@@ -170,7 +171,6 @@ class AirplaneControllerExtended(AirplaneController):
 
     def vision_mode(self, mode: int):
         """设置视觉工作模式
-        :param port:
         :param mode: 1点检测2线检测3标签检测4二维码扫描5条形码扫描
         """
         self.s.send().vision_mode(mode)

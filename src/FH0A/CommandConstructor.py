@@ -127,12 +127,15 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def led(self, r: int, g: int, b: int):
+        """设置无人机led色彩"""
         self._led(0x00, r, g, b)
 
     def bln(self, r: int, g: int, b: int):
+        """设置无人机led呼吸灯色彩"""
         self._led(0x01, r, g, b)
 
     def rainbow(self, r: int, g: int, b: int):
+        """设置无人机led彩虹色彩"""
         self._led(0x02, r, g, b)
 
     def _led(self, mode: int, r: int, g: int, b: int):
@@ -152,6 +155,7 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def takeoff(self, high: int, ):
+        """起飞到指定高度 单位cm"""
         params = bytearray(10)
         pack_into("!B", params, 0, 0x01)
         pack_into("!h", params, 1, high)
@@ -162,6 +166,7 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def land(self, ):
+        """降落"""
         params = bytearray(10)
         pack_into("!B", params, 0, 0x00)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
@@ -171,6 +176,10 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def move(self, direction: int, distance: int):
+        """向某个方向移动多少距离
+        :param direction: 移动方向（1上2下3前4后5左6右）
+        :param distance: 移动距离 单位cm
+        """
         if direction < 0 or direction > 6:
             raise ValueError("direction illegal", direction)
 
@@ -185,30 +194,41 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def up(self, distance: int):
+        """上升指定距离 单位cm"""
         self.move(0x01, distance)
         pass
 
     def down(self, distance: int):
+        """下降指定距离 单位cm"""
         self.move(0x02, distance)
         pass
 
     def forward(self, distance: int):
+        """前进指定距离 单位cm"""
         self.move(0x03, distance)
         pass
 
     def back(self, distance: int):
+        """后退指定距离 单位cm"""
         self.move(0x04, distance)
         pass
 
     def left(self, distance: int):
+        """左移指定距离 单位cm"""
         self.move(0x05, distance)
         pass
 
     def right(self, distance: int):
+        """右移指定距离 单位cm"""
         self.move(0x06, distance)
         pass
 
     def flip(self, direction: int, circle: int):
+        """做翻转（翻跟头）动作
+        :param port:
+        :param direction: 翻转方向：f(向前)/b(向后)/l(向左)/r(向右)
+        :param circle: 翻转的圈数
+        """
         if direction < 0 or direction > 4:
             raise ValueError("direction illegal", direction)
         if circle != 1 and circle != 2:
@@ -225,22 +245,35 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def flip_forward(self, circle: int):
+        """向前做翻转（翻跟头）动作
+        :param circle: 翻转的圈数
+        """
         self.flip(0x01, circle)
         pass
 
     def flip_back(self, circle: int):
+        """向后做翻转（翻跟头）动作
+        :param circle: 翻转的圈数
+        """
         self.flip(0x02, circle)
         pass
 
     def flip_left(self, circle: int):
+        """向左做翻转（翻跟头）动作
+        :param circle: 翻转的圈数
+        """
         self.flip(0x03, circle)
         pass
 
     def flip_right(self, circle: int):
+        """向右做翻转（翻跟头）动作
+        :param circle: 翻转的圈数
+        """
         self.flip(0x04, circle)
         pass
 
     def arrive(self, x: int, y: int, z: int):
+        """移动到指定坐标处"""
 
         params = bytearray(10)
         pack_into("!B", params, 0, 0x03)
@@ -254,6 +287,7 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def rotate(self, degree: int):
+        """顺时旋转指定角度"""
 
         params = bytearray(10)
         pack_into("!B", params, 0, 0x05)
@@ -265,18 +299,21 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def cw(self, degree: int):
+        """顺时针旋转指定角度"""
         if degree < 0:
             raise ValueError("degree illegal", degree)
         self.rotate(degree)
         pass
 
     def ccw(self, degree: int):
+        """逆时针旋转指定角度"""
         if degree < 0:
             raise ValueError("degree illegal", degree)
         self.rotate(-degree)
         pass
 
     def speed(self, speed: int):
+        """设置飞行速度"""
         if speed < 0 or speed > 200:
             raise ValueError("speed illegal", speed)
 
@@ -290,6 +327,7 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def high(self, high: int):
+        """移动到指定高度处"""
 
         params = bytearray(10)
         pack_into("!B", params, 0, 0x07)
@@ -308,6 +346,9 @@ class CommandConstructor(CommandConstructorCore):
         2 - Line follow Mode
         3 - Follow Mode
         4 - Single Mode
+
+        设置无人机飞行模式
+        :param mode: 1常规2巡线3跟随4单机编队 通常情况下使用模式4
 
         :param self: Access attributes of the class
         :param mode:int: Specify which mode the airplane should be set to
@@ -334,6 +375,9 @@ class CommandConstructor(CommandConstructorCore):
         3 - Tag detect Mode
         4 - Qrcode detect Mode
         5 - LineCode detect Mode
+
+        设置视觉工作模式
+        :param mode: 1点检测2线检测3标签检测4二维码扫描5条形码扫描
 
         :param self: Access the object's attributes and methods
         :param mode:int: Set the airplane mode to 1, 2, 3, 4 or 5
@@ -370,10 +414,13 @@ class CommandConstructor(CommandConstructorCore):
         The next two integers are for Low values and High values of greeness (0-255).
         The last two integers are for Low values and High Values of blueness (0-255).
 
+        颜色检测 检测指定颜色
+        L_*/A_*/B_* 为色彩在 Lab 色彩空间上的L/a/b三个色彩通道
+        *_L/*_H 为色彩在 Lab 色彩空间上各个的色彩通道的上下限范围
 
         :param self: Access the variables and methods in the class
-        :param L_L:int: Set the lower bound of the lightness value
-        :param L_H:int: Set the upper bound of the lightness value
+        :param L_L:int: Set the lower bound of the lightness value range for a channel
+        :param L_H:int: Set the upper bound of the lightness value range for a channel
         :param A_L:int: Set the lower bound of the color range for a channel
         :param A_H:int: Set the upper bound of the color range for a channel
         :param B_L:int: Set the lower bound of the color range for b channel

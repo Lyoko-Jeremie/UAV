@@ -132,7 +132,7 @@ class FH0A:
         self.p(port).vision_mode(mode)
 
     def stop(self, port: str):
-        """停桨"""
+        """悬停"""
         self.p(port).stop()
 
     def hover(self, port: str):

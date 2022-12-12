@@ -2,6 +2,7 @@
 
 ---
 
+参见 FH0A.AirplaneManagerAdapter
 
 
 ```python
@@ -52,6 +53,8 @@ exit(0)
 ### FH0A
 
 ---
+
+参见 FH0A.ph0apy
 
 ```python
 from FH0A.ph0apy import FH0A
