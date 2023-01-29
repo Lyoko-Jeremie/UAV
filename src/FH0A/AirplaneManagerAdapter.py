@@ -185,6 +185,12 @@ class AirplaneControllerExtended(AirplaneController):
         self.s.send().vision_color(L_L, L_H, A_L, A_H, B_L, B_H)
         pass
 
+    def mode(self, mode: int):
+        """设置无人机飞行模式
+        :param mode: 1常规2巡线3跟随4单机编队 通常情况下使用模式4
+        """
+        self.s.send().airplane_mode(mode)
+
     def request_read_multi_setting_info(self):
         """发送获取多机编队设置的请求"""
         self.s.send().read_multi_setting()
