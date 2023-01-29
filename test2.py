@@ -18,7 +18,9 @@ if __name__ == '__main__':
     a = m.get_airplane_extended('COM3')
 
     a.takeoff(100)
-    sleep(5)
+    m.sleep(5)
+
+    a.mode(4)
 
     # a.left(50)
     # sleep(5)
