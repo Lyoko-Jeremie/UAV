@@ -3,6 +3,7 @@
 目的是尽可能使得使用PhantasyIslandPythonRemoteControl库编写的代码可以在只修改import导入表的情况下直接调用FH0A库对应的功能
 """
 from typing import Dict, Optional
+from time import sleep
 
 from .SerialThread import SerialThread
 
@@ -293,6 +294,10 @@ class AirplaneManager(object):
         else:
             self.airplanes_table[id] = AirplaneControllerExtended(id)
             return self.airplanes_table.get(id)
+        pass
+
+    def sleep(self, time):
+        sleep(time)
         pass
 
     def flush(self):
