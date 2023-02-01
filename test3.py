@@ -3,11 +3,11 @@ from src.FH0A.ph0apy import FH0A
 fh = FH0A()
 
 a = "COM3"
-b = "COM4"
+b = "COM9"
 c = "COM5"
-d = "COM6"
-e = "COM7"
-f = "COM8"
+d = "COM8"
+e = "COM4"
+f = "COM7"
 
 # 添加飞机
 fh.add_uav(a)
