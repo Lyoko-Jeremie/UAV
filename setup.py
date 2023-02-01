@@ -22,7 +22,10 @@ setuptools.setup(
     },
     classifiers=[
     ],
-    install_requires=install_requires,
+    # install_requires=install_requires,
+    install_requires=[
+        'pyserial>=3.5',
+    ],
     author='Jeremie',
     author_email='lucheng989898@protonmail.com',
     python_requires='>=3.8',
