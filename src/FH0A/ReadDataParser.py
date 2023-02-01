@@ -1,3 +1,6 @@
+"""
+这个文件负责解析从飞机串口发来的二进制数据
+"""
 from queue import Queue
 from struct import pack, unpack, pack_into, unpack_from
 from typing import List, Dict, Any, Tuple, Union, Literal
@@ -15,6 +18,27 @@ Header_Others_SingleSetting_Info = b'\xAA\x00\x05'
 
 @dataclass
 class BaseInfo:
+    """
+    飞机以及遥控器基本数据信息
+
+    ...
+    Attributes
+    ----------
+    fly_id: int
+        # 编队模式下的飞机编号，如果是单机模式则固定是0xFF。
+    hardwareType: int
+        # 硬件类型，固定是1，代表小四轴无人机
+    fly_voltage: int
+        # 飞机电池电压
+    rmt_voltages16: int
+        # 遥控电池电压
+    nrf_ssi: int
+        # 无人机收到遥控器数据的帧数
+    self_test_flag: int
+        # 传感器自检状态
+    setting_flag: int
+        # 当前设置状态
+    """
     fly_id: int  # 编队模式下的飞机编号，如果是单机模式则固定是0xFF。
     hardwareType: int  # 硬件类型，固定是1，代表小四轴无人机
     fly_voltage: int  # 飞机电池电压
@@ -26,6 +50,36 @@ class BaseInfo:
 
 @dataclass
 class SensorInfo:
+    """
+    飞机传感器信息
+
+    ...
+    Attributes
+    ----------
+    lock_flag: int
+        # 0上锁状态1解锁状态
+    reserved0: int
+        # 预留
+
+    rol: int
+        # 横滚角，单位：度
+    pit: int
+        # 俯仰角，单位：度
+    yaw: int
+        # 航向角，单位：度
+    high: int
+        # 高度，单位：厘米
+
+    id: int
+        # 固定是0，目前没什么意义
+
+    loc_x: int
+        # 当前x坐标，单位：厘米
+    loc_y: int
+        # 当前y坐标，单位：厘米
+    reserved1: int
+        # 预留
+    """
     lock_flag: int  # 0上锁状态1解锁状态
     reserved0: int  # 预留
 
@@ -43,6 +97,54 @@ class SensorInfo:
 
 @dataclass
 class VisionSensorInfo:
+    """
+    飞机视觉传感器信息
+
+    ...
+    Attributes
+    ----------
+    flow_x: int
+        # 光流x轴数据
+    flow_y: int
+        # 光流y轴数据
+    flow_qualt: int
+        # 光流数据可靠性指数
+
+    # 以下内容仅在 点检测 模式下才有数据
+    dot_x: int
+        # 检测到点的x轴坐标
+    dot_y: int
+        # 检测到点的y轴坐标
+    is_dot_ok: int
+        # 是否检测到点，非零表示检测到了。
+        # those are only contain valid values in line detect mode, you need call `CommandConstructor.vision_mode(1)` to enable it.
+
+    # 以下内容仅在 线检测 模式下才有数据
+    line_x: int
+        # 检测到竖线的坐标
+    line_y: int
+        # 检测到横线的坐标
+    line_x_angle: int
+        # 检测到竖线的倾角
+    line_y_angle: int
+        # 检测到横线的倾角
+    line_flag: int
+        # 是否检测到线的标志
+        # （bit0=1表示前方检测到线，bit1=1表示后方检测到线，bit2=1表示左方检测到线，bit3=1表示右方检测到线）
+        # those are only contain valid values in line detect mode, you need call `CommandConstructor.vision_mode(2)` to enable it.
+
+    # 以下内容仅在 标签检测 模式下才有数据
+    tag_id: int
+        # 检测到的标签编号
+    is_tag_ok: int
+        # 是否检测到标签，非零表示检测到了。
+
+    mv_mode: int
+        # 当前视觉模块的工作模式
+
+    obsDir: int
+        # 非零表示检测到了障碍物
+    """
     flow_x: int  # 光流x轴数据
     flow_y: int  # 光流y轴数据
     flow_qualt: int  # 光流数据可靠性指数
@@ -68,6 +170,21 @@ class VisionSensorInfo:
 
 @dataclass
 class HardwareInfo:
+    """
+    飞机硬件信息
+
+    ...
+    Attributes
+    ----------
+    hardtype: int
+        # 硬件类型(0遥控1飞机)
+    hardware: int
+        # 硬件版本(例如：software=400，表示V4.0.0)
+    software: int
+        # 软件版本(固件更新日期，例如：20200101)
+    iap_ware: int
+        # IAP版本(iap_ware=100，表示V1.0.0)
+    """
     hardtype: int  # 硬件类型(0遥控1飞机)
     hardware: int  # 硬件版本(例如：software=400，表示V4.0.0)
     software: int  # 软件版本(固件更新日期，例如：20200101)
@@ -76,6 +193,21 @@ class HardwareInfo:
 
 @dataclass
 class MultiSettingInfo:
+    """
+    多机编队模式设置
+
+    ...
+    Attributes
+    ----------
+    mode: int
+        # 0单机模式1编队模式
+    id: int
+        # 飞机编号
+    channel: int
+        # 通信信道0~125
+    addr: int
+        # 通信地址
+    """
     mode: int  # 0单机模式1编队模式
     id: int  # 飞机编号
     channel: int  # 通信信道0~125
@@ -84,6 +216,19 @@ class MultiSettingInfo:
 
 @dataclass
 class SingleSettingInfo:
+    """
+    单机模式设置
+
+    ...
+    Attributes
+    ----------
+    mode: int
+        # 0低速1中速2高速
+    channel: int
+        # 通信信道0~125
+    addr: int
+        # 通信地址（多台机子同时在单机模式下工作必须要把信道和地址设置为不一样）
+    """
     mode: int  # 0低速1中速2高速
     channel: int  # 通信信道0~125
     addr: int  # 通信地址（多台机子同时在单机模式下工作必须要把信道和地址设置为不一样）
@@ -92,6 +237,7 @@ class SingleSettingInfo:
 class ReadDataParser:
     """
     this class Parse data that comes from serial port.
+    这个类负责解析从串口发来的数据
     """
 
     read_buffer: bytearray = bytearray()
