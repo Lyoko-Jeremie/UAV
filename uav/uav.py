@@ -110,7 +110,7 @@ class UAV:
     def mode(self, port: str, mode: int):
         """设置无人机飞行模式
         :param port:
-        :param mode: 1常规2巡线3跟随4单机编队 通常情况下使用模式4
+        :param mode: FH0A需要使用4，FH0C使用1
         """
         self.p(port).airplane_mode(mode)
 

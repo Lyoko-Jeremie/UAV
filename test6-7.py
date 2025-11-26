@@ -8,7 +8,13 @@ u = UAV()
 
 a = 'FH0C:COM3'
 
-u.sleep(2)
+u.add_uav(a)
+u.sleep(1)
+
+# 设置模式，FH0A 需设置为4，FH0C 需设置为1
+u.mode(a, 1)
+# u.mode(a, 4)
+u.sleep(1)
 
 u.takeoff(a, 100)
 print('takeoff')

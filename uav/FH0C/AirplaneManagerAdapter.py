@@ -123,7 +123,7 @@ class AirplaneControllerExtended(AirplaneController):
 
     def airplane_mode(self, mode: int):
         """设置无人机飞行模式
-        :param mode: 1常规2巡线3跟随4单机编队 通常情况下使用模式4
+        :param mode: 0光流1标签2巡线  goto需要切换到 1
         """
         self.s.send().airplane_mode(mode)
         pass

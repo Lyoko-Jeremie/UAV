@@ -16,7 +16,8 @@ class FH0C:
 
     def add_uav(self, port: str):
         """添加（注册）无人机"""
-        self.airs.get_airplane_extended(port)
+        a = self.airs.get_airplane_extended(port)
+        a.airplane_mode(1)
         pass
 
     def p(self, port: str):
