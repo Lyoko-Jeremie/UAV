@@ -81,6 +81,12 @@ class CommandConstructorCore:
         The join_cmd function concatenates the header, params and checksum to a cmd bytearray to let it become a valid serial cmd package.
         The function is called in the send_cmd function.
 
+        New Protocol (Fixed 32 Byte):
+        HEAD  LEN        FUN      order[13]   order[13]   volume      reserved    SUM
+        0xBB  0x1D(29)   0xF3     cmd 1       cmd 2       0x64(100)   0x00        sum() & 0xFF
+
+        Each cmd structure (13 bytes):
+        ID[1] + CMD[1] + COUNT[1] + PARAM[variable] + padding zeros
 
         :param self: Access the attributes and methods of the class in python
         :param type:CmdType: Distinguish the different commands
@@ -88,43 +94,34 @@ class CommandConstructorCore:
         :return: A bytearray
         :doc-author: Jeremie
         """
-        """
-        this function concat header+params+checksum to a bytearray for ready to send
-        """
-        header = bytearray(b'\xBB\x00\x00')
-        if type == CmdType.MULTI_SETTINGS:  # 编队设置 0xBB, 0x08, 0x04
-            pack_into("!B", header, 1, 0x08)
-            pack_into("!B", header, 2, 0x04)
-            # header[1] = 0x08
-            # header[2] = 0x04
-            checksum = self._check_sum(header, params)
-            return header + params + checksum
-            pass
-        elif type == CmdType.SINGLE_SETTINGS:  # 单机设置 0xBB, 0x07, 0x05
-            pack_into("!B", header, 1, 0x07)
-            pack_into("!B", header, 2, 0x05)
-            # header[1] = 0x07
-            # header[2] = 0x05
-            checksum = self._check_sum(header, params)
-            return header + params + checksum
-            pass
-        elif type == CmdType.READ_SETTINGS:  # 读设置 0xBB, 0x02, 0x02
-            pack_into("!B", header, 1, 0x02)
-            pack_into("!B", header, 2, 0x02)
-            checksum = self._check_sum(header, params)
-            return header + params + checksum
-            pass
-        elif type == CmdType.SINGLE_CONTROL:  # 串口控制 0xBB, 0x0B, 0xF3
-            pack_into("!B", header, 1, 0x0B)
-            pack_into("!B", header, 2, 0xF3)
-            # header[1] = 0x0B
-            # header[2] = 0xF3
-            pack_into("!B", params, 9, self._order_count())
-            # params.append(self._order_count())
-            checksum = self._check_sum(header, params)
-            return header + params + checksum
-            pass
-        pass
+        # Fixed header for new protocol
+        header = bytearray(b'\xBB\x1D')  # HEAD=0xBB, LEN=0x1D(29)
+
+        # Fixed 29-byte data body
+        data_body = bytearray(29)
+        data_body[0] = 0xF3  # FUN byte
+
+        # Check param length (should not exceed 13 bytes)
+        if len(params) > 13:
+            raise ValueError(f"params length {len(params)} exceeds maximum 13 bytes")
+
+        # Copy params to cmd1 position (offset 1)
+        data_body[1:1+len(params)] = params
+
+        # Copy params to cmd2 position (offset 1+13=14), cmd1 and cmd2 are identical
+        data_body[14:14+len(params)] = params
+
+        # Set volume byte at position 27 (1 + 13 + 13)
+        data_body[27] = 0x64  # volume = 100
+
+        # Set reserved byte at position 28
+        data_body[28] = 0x00  # reserved = 0
+
+        # Calculate checksum
+        checksum = self._check_sum(header, data_body)
+
+        # Construct final command: header + data_body + checksum = 2 + 29 + 1 = 32 bytes
+        return header + data_body + checksum
 
     pass
 
@@ -139,6 +136,7 @@ class CommandConstructor(CommandConstructorCore):
     def __init__(self, q_write: Queue):
         super().__init__(q_write)
         pass
+
 
     def led(self, r: int, g: int, b: int):
         """设置无人机led色彩"""
