@@ -137,6 +137,30 @@ class CommandConstructor(CommandConstructorCore):
         super().__init__(q_write)
         pass
 
+    def _build_cmd_params(self, cmd: int, *param_bytes) -> bytearray:
+        """
+        Build command parameters following the new protocol format:
+        ID[1] + CMD[1] + COUNT[1] + PARAM[variable]
+
+        :param cmd: Command ID
+        :param param_bytes: Variable parameter bytes to append
+        :return: bytearray ready for join_cmd
+        """
+        params = bytearray()
+        params.append(0x00)  # ID byte (always 0x00)
+        params.append(cmd & 0xFF)  # CMD byte
+        params.append(self._order_count() & 0xFF)  # COUNT byte (order count)
+
+        # Append parameter bytes
+        for byte_val in param_bytes:
+            if isinstance(byte_val, int):
+                params.append(byte_val & 0xFF)
+            elif isinstance(byte_val, bytearray) or isinstance(byte_val, bytes):
+                params.extend(byte_val)
+            else:
+                raise TypeError(f"Unsupported parameter type: {type(byte_val)}")
+
+        return params
 
     def led(self, r: int, g: int, b: int):
         """设置无人机led色彩"""
@@ -154,12 +178,8 @@ class CommandConstructor(CommandConstructorCore):
         if mode < 0 or mode > 2:
             raise ValueError("mode illegal", mode)
 
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0x08)
-        pack_into("!B", params, 1, mode)
-        pack_into("!B", params, 2, r)
-        pack_into("!B", params, 3, g)
-        pack_into("!B", params, 4, b)
+        # Build params: ID + CMD + COUNT + mode + r + g + b
+        params = self._build_cmd_params(13, mode, r, g, b)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("led", cmd.hex(' '))
         self.sendCommand(cmd)
@@ -168,9 +188,9 @@ class CommandConstructor(CommandConstructorCore):
 
     def takeoff(self, high: int, ):
         """起飞到指定高度 单位cm"""
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0x01)
-        pack_into("!h", params, 1, high)
+        # Build params: ID + CMD + COUNT + high(Int16LE) + tagDis(50) + isGoTo(0)
+        high_bytes = pack("<h", high)  # Int16LE (little-endian signed short)
+        params = self._build_cmd_params(0, high_bytes, 50, 0)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("takeoff", cmd.hex(' '))
         self.sendCommand(cmd)
@@ -179,8 +199,8 @@ class CommandConstructor(CommandConstructorCore):
 
     def land(self, ):
         """降落"""
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0x00)
+        # Build params: ID + CMD + COUNT + 0
+        params = self._build_cmd_params(254, 0)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("land", cmd.hex(' '))
         self.sendCommand(cmd)
@@ -189,16 +209,15 @@ class CommandConstructor(CommandConstructorCore):
 
     def move(self, direction: int, distance: int):
         """向某个方向移动多少距离
-        :param direction: 移动方向（1上2下3前4后5左6右）
+        :param direction: 移动方向（1前2后3左4右5上6下7↖8↗9↙10↘）
         :param distance: 移动距离 单位cm
         """
-        if direction < 0 or direction > 6:
+        if direction < 1 or direction > 10:
             raise ValueError("direction illegal", direction)
 
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0x02)
-        pack_into("!B", params, 1, direction)
-        pack_into("!h", params, 2, distance)
+        # Build params: ID + CMD + COUNT + direction(UInt8) + distance(Int16LE)
+        distance_bytes = pack("<h", distance)  # Int16LE
+        params = self._build_cmd_params(5, direction, distance_bytes)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("move", cmd.hex(' '))
         self.sendCommand(cmd)
@@ -207,49 +226,46 @@ class CommandConstructor(CommandConstructorCore):
 
     def up(self, distance: int):
         """上升指定距离 单位cm"""
-        self.move(0x01, distance)
+        self.move(0x05, distance)
         pass
 
     def down(self, distance: int):
         """下降指定距离 单位cm"""
-        self.move(0x02, distance)
+        self.move(0x06, distance)
         pass
 
     def forward(self, distance: int):
         """前进指定距离 单位cm"""
-        self.move(0x03, distance)
+        self.move(0x01, distance)
         pass
 
     def back(self, distance: int):
         """后退指定距离 单位cm"""
-        self.move(0x04, distance)
+        self.move(0x02, distance)
         pass
 
     def left(self, distance: int):
         """左移指定距离 单位cm"""
-        self.move(0x05, distance)
+        self.move(0x03, distance)
         pass
 
     def right(self, distance: int):
         """右移指定距离 单位cm"""
-        self.move(0x06, distance)
+        self.move(0x04, distance)
         pass
 
     def flip(self, direction: int, circle: int):
         """做翻转（翻跟头）动作
-        :param port:
-        :param direction: 翻转方向：f(向前)/b(向后)/l(向左)/r(向右)
+        :param direction: 翻转方向：1(向前)/2(向后)/3(向左)/4(向右)
         :param circle: 翻转的圈数
         """
-        if direction < 0 or direction > 4:
+        if direction < 1 or direction > 4:
             raise ValueError("direction illegal", direction)
         if circle != 1 and circle != 2:
             raise ValueError("circle illegal", circle)
 
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0x04)
-        pack_into("!B", params, 1, direction)
-        pack_into("!B", params, 2, circle)
+        # Build params: ID + CMD + COUNT + direction + circle
+        params = self._build_cmd_params(12, direction, circle)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("flip", cmd.hex(' '))
         self.sendCommand(cmd)
@@ -287,11 +303,11 @@ class CommandConstructor(CommandConstructorCore):
     def arrive(self, x: int, y: int, z: int):
         """移动到指定坐标处"""
 
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0x03)
-        pack_into("!h", params, 1, x)
-        pack_into("!h", params, 3, y)
-        pack_into("!h", params, 5, z)
+        # Build params: ID + CMD + COUNT + x(Int16LE) + y(Int16LE) + z(Int16LE)
+        x_bytes = pack("<h", x)
+        y_bytes = pack("<h", y)
+        z_bytes = pack("<h", z)
+        params = self._build_cmd_params(9, x_bytes, y_bytes, z_bytes)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("arrive", cmd.hex(' '))
         self.sendCommand(cmd)
@@ -299,11 +315,11 @@ class CommandConstructor(CommandConstructorCore):
         pass
 
     def rotate(self, degree: int):
-        """顺时旋转指定角度"""
+        """旋转指定角度（正数顺时针，负数逆时针）"""
 
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0x05)
-        pack_into("!h", params, 1, degree)
+        # Build params: ID + CMD + COUNT + degree(Int16LE)
+        degree_bytes = pack("<h", degree)
+        params = self._build_cmd_params(10, degree_bytes)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("rotate", cmd.hex(' '))
         self.sendCommand(cmd)
@@ -329,9 +345,9 @@ class CommandConstructor(CommandConstructorCore):
         if speed < 0 or speed > 200:
             raise ValueError("speed illegal", speed)
 
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0x06)
-        pack_into("!h", params, 1, speed)
+        # Build params: ID + CMD + COUNT + speed(Int16LE)
+        speed_bytes = pack("<h", speed)
+        params = self._build_cmd_params(2, speed_bytes)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("speed", cmd.hex(' '))
         self.sendCommand(cmd)
@@ -341,9 +357,9 @@ class CommandConstructor(CommandConstructorCore):
     def high(self, high: int):
         """移动到指定高度处"""
 
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0x07)
-        pack_into("!h", params, 1, high)
+        # Build params: ID + CMD + COUNT + high(Int16LE)
+        high_bytes = pack("<h", high)
+        params = self._build_cmd_params(11, high_bytes)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("high", cmd.hex(' '))
         self.sendCommand(cmd)
@@ -366,12 +382,11 @@ class CommandConstructor(CommandConstructorCore):
         :param mode:int: Specify which mode the airplane should be set to
         :doc-author: Trelent
         """
-        if mode < 0 or mode > 5:
+        if mode < 1 or mode > 4:
             raise ValueError("mode illegal", mode)
 
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0x09)
-        pack_into("!B", params, 1, mode)
+        # Build params: ID + CMD + COUNT + mode
+        params = self._build_cmd_params(1, mode)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("airplane_mode", cmd.hex(' '))
         self.sendCommand(cmd)
@@ -395,12 +410,12 @@ class CommandConstructor(CommandConstructorCore):
         :param mode:int: Set the airplane mode to 1, 2, 3, 4 or 5
         :doc-author: Jeremie
         """
-        if mode < 0 or mode > 5:
+        if mode < 1 or mode > 5:
             raise ValueError("mode illegal", mode)
 
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0x0A)
-        pack_into("!B", params, 1, mode)
+        # Build params: ID + CMD + COUNT + mode
+        # Note: This command may not be supported in new protocol (commented out in TypeScript)
+        params = self._build_cmd_params(0x0A, mode)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("vision_mode", cmd.hex(' '))
         self.sendCommand(cmd)
@@ -409,8 +424,8 @@ class CommandConstructor(CommandConstructorCore):
 
     def hovering(self, ):
 
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0xFE)
+        # Build params: ID + CMD + COUNT + 4 (celibate mode)
+        params = self._build_cmd_params(254, 4)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("hovering", cmd.hex(' '))
         self.sendCommand(cmd)
@@ -440,15 +455,9 @@ class CommandConstructor(CommandConstructorCore):
         :doc-author: Jeremie
         """
 
-        params = bytearray(10)
-        pack_into("!B", params, 0, 0x0A)
-        pack_into("!B", params, 1, 0x06)
-        pack_into("!B", params, 2, L_L)
-        pack_into("!B", params, 3, L_H)
-        pack_into("!B", params, 4, A_L)
-        pack_into("!B", params, 5, A_H)
-        pack_into("!B", params, 6, B_L)
-        pack_into("!B", params, 7, B_H)
+        # Build params: ID + CMD + COUNT + 0x06 + L_L + L_H + A_L + A_H + B_L + B_H
+        # Note: This command may not be supported in new protocol
+        params = self._build_cmd_params(0x0A, 0x06, L_L, L_H, A_L, A_H, B_L, B_H)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
         print("vision_color", cmd.hex(' '))
         self.sendCommand(cmd)
