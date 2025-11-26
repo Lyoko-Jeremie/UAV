@@ -218,7 +218,7 @@ class SerialThread(SerialThreadCore):
     this class extends SerialThreadCore, and implements more useful functions
     """
 
-    cc: CommandConstructor = None
+    ss: CommandConstructor = None
 
     def __init__(self, port: str):
         super().__init__(port)
@@ -254,7 +254,7 @@ if __name__ == '__main__':
     # st.send_cmd(d)
     print("st", st)
     print("st.s", st.s)
-    print("st.cc", st.cc)
+    print("st.ss", st.ss)
     print("st.call()", st.send())
     # print("st.hardware_info", st.hardware_info())
     # st.call().led(2, 255, 0, 255)
