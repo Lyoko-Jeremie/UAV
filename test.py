@@ -1,4 +1,4 @@
-from cv2 import cv2
+import cv2
 
 from multiprocessing import Process, Queue
 

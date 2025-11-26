@@ -1,11 +1,9 @@
 from time import sleep
 
-from uav.FH0A import get_airplane_manager
-from uav.FH0A.AirplaneManagerAdapter import AirplaneManager
-from uav.FH0A.AirplaneManagerAdapter import AirplaneController
+from uav import get_airplane_manager, UAVAirplaneManager
 
 if __name__ == '__main__':
-    m: AirplaneManager = get_airplane_manager()
+    m: UAVAirplaneManager = get_airplane_manager()
 
     # print('airplanes_table', m.airplanes_table)
 
@@ -15,9 +13,9 @@ if __name__ == '__main__':
 
     print(m.start())
 
-    a = m.get_airplane_extended('COM3')
-    b = m.get_airplane_extended('COM4')
-    c = m.get_airplane_extended('COM5')
+    a = m.get_airplane_extended('FH0C:COM3')
+    b = m.get_airplane_extended('FH0C:COM4')
+    c = m.get_airplane_extended('FH0C:COM5')
 
     for i in [a, b, c]:
         i.takeoff(100)
