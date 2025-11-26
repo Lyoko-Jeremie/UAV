@@ -11,15 +11,15 @@ if os.path.isfile(requirementPath):
 
 setuptools.setup(
     name="UAV",
-    version="0.0.2",
+    version="0.0.1",
     description="Python Controller UAV",
     # https://stackoverflow.com/questions/51286928/what-is-where-argument-for-in-setuptools-find-packages
     # DO NOT pack mock/test (like js) into output
-    packages=setuptools.find_packages(where='UAV'),
+    packages=setuptools.find_packages(),
     # special the root
-    package_dir={
-        '': 'src',
-    },
+    # package_dir={
+    #     '': 'UAV',
+    # },
     classifiers=[
     ],
     # install_requires=install_requires,

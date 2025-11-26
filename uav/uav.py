@@ -1,9 +1,9 @@
 from time import sleep
-from .AirplaneManagerAdapter import get_airplane_manager, AirplaneManager
+from .UAVAirplaneManager import get_airplane_manager, UAVAirplaneManager
 
 
-class FH0C:
-    airs: AirplaneManager = get_airplane_manager()
+class UAV:
+    airs: UAVAirplaneManager = get_airplane_manager()
 
     def sleep(self, time):
         """sleep 单位 秒"""

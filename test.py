@@ -2,9 +2,9 @@ from cv2 import cv2
 
 from multiprocessing import Process, Queue
 
-from UAV.FH0A import get_airplane_manager
-from UAV.FH0A.AirplaneManagerAdapter import AirplaneManager
-from UAV.FH0A.AirplaneManagerAdapter import AirplaneController
+from uav.FH0A import get_airplane_manager
+from uav.FH0A.AirplaneManagerAdapter import AirplaneManager
+from uav.FH0A.AirplaneManagerAdapter import AirplaneController
 
 
 def process_recive_keyPressEvent(Q):
