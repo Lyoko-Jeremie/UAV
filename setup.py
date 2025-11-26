@@ -10,7 +10,7 @@ if os.path.isfile(requirementPath):
         install_requires = f.read().splitlines()
 
 setuptools.setup(
-    name="UAV",
+    name="uav",
     version="0.0.1",
     description="Python Controller UAV",
     # https://stackoverflow.com/questions/51286928/what-is-where-argument-for-in-setuptools-find-packages
