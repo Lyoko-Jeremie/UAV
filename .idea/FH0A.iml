@@ -3,7 +3,6 @@
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/venv" />
-      <excludeFolder url="file://$MODULE_DIR$/src/FH0A.egg-info" />
       <excludeFolder url="file://$MODULE_DIR$/out" />
       <excludeFolder url="file://$MODULE_DIR$/dist" />
       <excludeFolder url="file://$MODULE_DIR$/.mypy_cache" />
@@ -11,7 +10,8 @@
       <excludeFolder url="file://$MODULE_DIR$/html" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/FH0A.egg-info" />
-      <excludeFolder url="file://$MODULE_DIR$/src/UAV.egg-info" />
+      <excludeFolder url="file://$MODULE_DIR$/UAV/FH0A.egg-info" />
+      <excludeFolder url="file://$MODULE_DIR$/UAV/UAV.egg-info" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.13 (FH0A)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

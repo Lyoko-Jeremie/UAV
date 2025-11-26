@@ -15,7 +15,7 @@ setuptools.setup(
     description="Python Controller UAV",
     # https://stackoverflow.com/questions/51286928/what-is-where-argument-for-in-setuptools-find-packages
     # DO NOT pack mock/test (like js) into output
-    packages=setuptools.find_packages(where='src'),
+    packages=setuptools.find_packages(where='UAV'),
     # special the root
     package_dir={
         '': 'src',

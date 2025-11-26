@@ -292,7 +292,7 @@ class AirplaneManager(object):
 
     def get_airplane_extended(self, id: str) -> Optional[AirplaneControllerExtended]:
         """获取扩展飞机对象
-        这个函数获取的API在完全适配PhantasyIslandPythonRemoteControl的API基础上，添加了FH0A无人机特有功能API
+        这个函数获取的API在完全适配PhantasyIslandPythonRemoteControl的API基础上，添加了FH0C无人机特有功能API
         """
         a = self.airplanes_table.get(id)
         if a is not None:

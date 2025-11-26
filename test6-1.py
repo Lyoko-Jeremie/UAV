@@ -1,8 +1,8 @@
 from time import sleep
 
-from src.FH0A import get_airplane_manager
-from src.FH0A.AirplaneManagerAdapter import AirplaneManager
-from src.FH0A.AirplaneManagerAdapter import AirplaneController
+from UAV.FH0A import get_airplane_manager
+from UAV.FH0A.AirplaneManagerAdapter import AirplaneManager
+from UAV.FH0A.AirplaneManagerAdapter import AirplaneController
 
 if __name__ == '__main__':
     m: AirplaneManager = get_airplane_manager()
