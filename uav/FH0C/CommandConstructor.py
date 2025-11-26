@@ -4,6 +4,20 @@ from enum import Enum
 
 from .QueueSignal import QueueSignal
 
+# 发送数据的协议包定义
+# 波特率 500000
+# 总包长固定为 32 Byte
+#
+# HEAD  LEN        FUN      order[13]   order[13]   volume      reserved    SUM
+# 0xBB  0x1D(29)   0xF3     cmd 1       cmd 2       0x64(100)   0x00        sum() & 0xFF
+#
+# cmd 1 和 cmd 2 内容相同
+# 每个 cmd 为以下结构，多余内容填0
+#
+# ID        CMD[1]      COUNT[1]    PARAM
+# 0x00      cmd id      cmd order   cmd param
+#
+
 
 class CmdType(Enum):
     MULTI_SETTINGS = 1
