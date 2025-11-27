@@ -110,7 +110,7 @@ class SerialThreadCore:
         self.port = port
         self.q_write: Queue = Queue()
         self.q_read: Queue = Queue()
-        self.s = serial.Serial(port, baudrate=115200, timeout=0.01)
+        self.s = serial.Serial(port, baudrate=500000, timeout=0.01)
 
         self.thead_local_write = ThreadLocal()
         self.thead_local_write.q = self.q_write
