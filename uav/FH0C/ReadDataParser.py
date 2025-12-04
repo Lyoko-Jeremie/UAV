@@ -15,6 +15,33 @@ Header_Others_Hardware_Info = b'\xAA\x00\x00'
 Header_Others_MultiSetting_Info = b'\xAA\x00\x04'
 Header_Others_SingleSetting_Info = b'\xAA\x00\x05'
 
+Header_Fh0cBase = b'\xAA\x1b\x01'
+
+
+@dataclass
+class Fh0cBase:
+    id: int  # u8       编号
+    vol: int  # u8      电压*10 ， 37表示3.7V
+    ssi: int  # u8      信号强度
+    state: int  # u16   传感器状态
+    # mv_flag :
+    # if(line.up_ok)    basicSensor.mv.flag |= BIT0;
+    # if(line.down_ok)  basicSensor.mv.flag |= BIT1;
+    # if(line.left_ok)  basicSensor.mv.flag |= BIT2;
+    # if(line.right_ok) basicSensor.mv.flag |= BIT3;
+    # if(tag.raw.flag)  basicSensor.mv.flag |= BIT4;
+    # if(dot.ok)        basicSensor.mv.flag |= BIT5;
+    # if(qr.ok)         basicSensor.mv.flag |= BIT6;
+    # if(br.ok)         basicSensor.mv.flag |= BIT7;
+    mv_flag: int  # u8
+    mv_tagId: int  # u16
+    obs_dist: Tuple[int, int, int, int]  # u8[4]    障碍物距离 前后左右
+    imu: Tuple[int, int, int]  # s16[3]     角度*10 , 123表示12.3度  , 横滚, 俯仰, 偏航
+    loc: Tuple[int, int, int]  # s16[3]     位置 x,y,h
+    # locErr: Tuple[int, int, int]  # s8[3]   位置误差
+    ai_id: int  # u8
+    other: List[int] = None  # 预留
+
 
 @dataclass
 class BaseInfo:
@@ -244,6 +271,7 @@ class ReadDataParser:
     q: Queue = None
     m_base_info: BaseInfo = None
     m_sensor_info: SensorInfo = None
+    m_fh0c_base: Fh0cBase = None
     m_vision_sensor_info: VisionSensorInfo = None
     m_hardware_info: HardwareInfo = None
     m_multi_setting_info: MultiSettingInfo = None
@@ -266,6 +294,7 @@ class ReadDataParser:
         """
         this method do the core task that split bytearray buffer stream into packages.
         """
+        print(self.read_buffer)
         while len(self.read_buffer) > 3:
             header = self.read_buffer[0:3]
             size = header[1]
@@ -287,6 +316,11 @@ class ReadDataParser:
                 data = self.read_buffer[0: size + 3]
                 # print("Header_Sensor_info", 0, size, len(data), data)
                 self.sensor_info(data)
+                pass
+            elif header == Header_Fh0cBase:
+                data = self.read_buffer[0: size + 3]
+                # print("Header_Sensor_info", 0, size, len(data), data)
+                self.fh0c_base(data)
                 pass
             elif header == Header_Others:
                 data = self.read_buffer[0: size + 3]
@@ -387,6 +421,47 @@ class ReadDataParser:
         # print("self._sensor_info", m_sensor_info)
         pass
 
+    def fh0c_base(self, data: bytearray):
+        # print("fh0c_base", data.hex(' '))
+        params = data[2:len(data) - 1]
+        m_fh0c_base = Fh0cBase(
+            id=unpack_from("!B", params, 1)[0],
+            vol=unpack_from("!B", params, 2)[0],
+            ssi=unpack_from("!B", params, 3)[0],
+            state=unpack_from("!H", params, 4)[0],
+            mv_flag=unpack_from("!B", params, 6)[0],
+            mv_tagId=unpack_from("!H", params, 7)[0],
+            obs_dist=(
+                unpack_from("!B", params, 9)[0],
+                unpack_from("!B", params, 10)[0],
+                unpack_from("!B", params, 11)[0],
+                unpack_from("!B", params, 12)[0],
+            ),
+            imu=(
+                unpack_from("!h", params, 13)[0],
+                unpack_from("!h", params, 15)[0],
+                unpack_from("!h", params, 17)[0],
+            ),
+            loc=(
+                unpack_from("!h", params, 19)[0],
+                unpack_from("!h", params, 21)[0],
+                unpack_from("!h", params, 23)[0],
+            ),
+            # locErr=(
+            #     unpack_from("!b", params, 25)[0],
+            #     unpack_from("!b", params, 26)[0],
+            #     unpack_from("!b", params, 27)[0],
+            # ),
+            # ai_id=unpack_from("!B", params, 28)[0],
+            ai_id=unpack_from("!B", params, 25)[0],
+            other=list(params[26:len(params)]),
+        )
+        with self.m_info_lock:
+            self.m_fh0c_base = m_fh0c_base
+            pass
+        print("self._fh0c_base", m_fh0c_base)
+        pass
+
     def other(self, data: bytearray):
         # print("other", data.hex(' '))
         # empty
@@ -449,6 +524,10 @@ class ReadDataParser:
     def get_sensor_info(self):
         with self.m_info_lock:
             return self.m_sensor_info
+
+    def get_fh0c_base(self):
+        with self.m_info_lock:
+            return self.m_fh0c_base
 
     def get_hardware_info(self):
         with self.m_info_lock:

@@ -3,8 +3,7 @@ from queue import Queue, Empty
 from time import sleep
 from threading import Thread
 
-# from .ReadDataParser import ReadDataParser, BaseInfo, SensorInfo, VisionSensorInfo, HardwareInfo, SingleSettingInfo, \
-#     MultiSettingInfo
+from .ReadDataParser import ReadDataParser
 from .CommandConstructor import CommandConstructor
 from .QueueSignal import QueueSignal
 
@@ -17,7 +16,7 @@ class ThreadLocal:
     t: Thread = None
     exit_queue: Queue = Queue()
 
-    # rdp: ReadDataParser = None
+    rdp: ReadDataParser = None
 
     def __init__(self):
         pass
@@ -79,7 +78,7 @@ def task_read(thead_local: ThreadLocal):
         # read from serial port
         d = thead_local.s.read(65535)
         # write new data to ReadDataParser
-        # thead_local.rdp.push(d)
+        thead_local.rdp.push(d)
     print("task_read done.")
     pass
 
@@ -120,7 +119,7 @@ class SerialThreadCore:
         self.thead_local_read = ThreadLocal()
         self.thead_local_read.q = self.q_read
         self.thead_local_read.s = self.s
-        # self.thead_local_read.rdp = ReadDataParser(self.thead_local_read.q)
+        self.thead_local_read.rdp = ReadDataParser(self.thead_local_read.q)
         self.thead_local_read.t = Thread(target=task_read, args=(self.thead_local_read,))
 
         self.thead_local_write.t.start()
