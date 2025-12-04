@@ -26,13 +26,19 @@ Header_Fh0cBase = b'\xAA\x1b\x01'
 #      u16 state;       //传感器状态
 #      u16 setting;     //设置状态
 #
-#      //7
 #      struct {
-#          u8 flag;
-#          u16 tagId;   // 检测到的标签编号
-#          s8 x0,y0;
-#          s8 x1,y1;
+#          u8 flag;      //bit0=1，前方有线；bit1=1，后方有线；bit2=1，左方有线；bit3=1，右方有线；
+#                        //bit4=1，检测到标签；bit5=1，检测到点；bit6=1，检测到二维码；bit7=1，检测到条形码。
+#
+#          u16 tagId;    //如果检测到标签，这里就是检测到的标签号。
+#
+#          s8 x0,y0;     //如果检测到标签，这里就是标签的坐标，
+#                        //如果检测到线，这里就是横线的坐标，
+#                        //如果检测到点，这里就是点的坐标。
+#
+#          s8 x1,y1;     //如果检测到线，这里就是竖线的坐标。
 #      }mv;
+#
 #      //14
 #      struct {
 #          s8 qual;     // 光流数据可靠性指数
@@ -55,15 +61,6 @@ class Fh0cBase:
     state: int  # u16   传感器状态
     setting: int  # u16  设置状态
 
-    # mv_flag :
-    # if(line.up_ok)    basicSensor.mv.flag |= BIT0;
-    # if(line.down_ok)  basicSensor.mv.flag |= BIT1;
-    # if(line.left_ok)  basicSensor.mv.flag |= BIT2;
-    # if(line.right_ok) basicSensor.mv.flag |= BIT3;
-    # if(tag.raw.flag)  basicSensor.mv.flag |= BIT4;
-    # if(dot.ok)        basicSensor.mv.flag |= BIT5;
-    # if(qr.ok)         basicSensor.mv.flag |= BIT6;
-    # if(br.ok)         basicSensor.mv.flag |= BIT7;
     mv_flag: int  # u8
     mv_tagId: int  # u16
     mv_x0: int  # s8
