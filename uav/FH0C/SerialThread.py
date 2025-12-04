@@ -3,7 +3,7 @@ from queue import Queue, Empty
 from time import sleep
 from threading import Thread
 
-from .ReadDataParser import ReadDataParser
+from .ReadDataParser import ReadDataParser, Fh0cBase
 from .CommandConstructor import CommandConstructor
 from .QueueSignal import QueueSignal
 
@@ -163,7 +163,10 @@ class SerialThreadCore:
     #     :doc-author: Jeremie
     #     """
     #     return self.thead_local_read.rdp.get_sensor_info()
-    #
+
+    def fh0c_base(self) -> Fh0cBase:
+        return self.thead_local_read.rdp.get_fh0c_base()
+
     # def vision_sensor_info(self) -> VisionSensorInfo:
     #     """
     #     The vision_sensor_info function returns a VisionSensorInfo object.

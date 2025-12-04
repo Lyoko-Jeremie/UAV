@@ -18,6 +18,20 @@ Header_Others_SingleSetting_Info = b'\xAA\x00\x05'
 Header_Fh0cBase = b'\xAA\x1b\x01'
 
 
+#
+#  u8 id;//编号
+#  u8 vol;//电压*10(例如：37表示3.7V)
+#  u8 ssi;//信号强度
+#  u16 state;//传感器状态
+#
+#  u8 mv_flag;
+#  u16 mv_tagId;
+#  u8 obs_dist[4];
+#  s16 imu[3];//角度*10（例如：123表示12.3度）
+#  s16 loc[3];//位置
+#  s8 locErr[3];//位置误差 x
+#  u8 ai_id;
+#
 @dataclass
 class Fh0cBase:
     id: int  # u8       编号
