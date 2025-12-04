@@ -18,19 +18,34 @@ Header_Others_SingleSetting_Info = b'\xAA\x00\x05'
 Header_Fh0cBase = b'\xAA\x1b\x01'
 
 
+#  typedef struct
+#  {
+#      u8 id;           //编号
+#      u8 vol;          //电压(例如：37表示3.7V)
+#      u8 ssi;          //信号强度
+#      u16 state;       //传感器状态
+#      u16 setting;     //设置状态
 #
-#  u8 id;//编号
-#  u8 vol;//电压*10(例如：37表示3.7V)
-#  u8 ssi;//信号强度
-#  u16 state;//传感器状态
-#
-#  u8 mv_flag;
-#  u16 mv_tagId;
-#  u8 obs_dist[4];
-#  s16 imu[3];//角度*10（例如：123表示12.3度）
-#  s16 loc[3];//位置
-#  s8 locErr[3];//位置误差 x
-#  u8 ai_id;
+#      //7
+#      struct {
+#          u8 flag;
+#          u16 tagId;   // 检测到的标签编号
+#          s8 x0,y0;
+#          s8 x1,y1;
+#      }mv;
+#      //14
+#      struct {
+#          s8 qual;     // 光流数据可靠性指数
+#          s8 x,y;      // 光流x/y轴数据
+#      }flow;
+#      //17
+#      struct {
+#          s16 x,y,z;   // 横滚/俯仰/航向角  度
+#      }imu;
+#      //23
+#      s16 high;
+#  }
+#  basicSensor_t;
 #
 @dataclass
 class Fh0cBase:
@@ -38,6 +53,8 @@ class Fh0cBase:
     vol: int  # u8      电压*10 ， 37表示3.7V
     ssi: int  # u8      信号强度
     state: int  # u16   传感器状态
+    setting: int  # u16  设置状态
+
     # mv_flag :
     # if(line.up_ok)    basicSensor.mv.flag |= BIT0;
     # if(line.down_ok)  basicSensor.mv.flag |= BIT1;
@@ -49,12 +66,17 @@ class Fh0cBase:
     # if(br.ok)         basicSensor.mv.flag |= BIT7;
     mv_flag: int  # u8
     mv_tagId: int  # u16
-    obs_dist: Tuple[int, int, int, int]  # u8[4]    障碍物距离 前后左右
-    imu: Tuple[int, int, int]  # s16[3]     角度*10 , 123表示12.3度  , 横滚, 俯仰, 偏航
-    loc: Tuple[int, int, int]  # s16[3]     位置 x,y,h
-    # locErr: Tuple[int, int, int]  # s8[3]   位置误差
-    ai_id: int  # u8
-    other: List[int] = None  # 预留
+    mv_x0: int  # s8
+    mv_y0: int  # s8
+    mv_x1: int  # s8
+    mv_y1: int  # s8
+
+    flow_qual: int  # s8
+    flow_x: int  # s8
+    flow_y: int  # s8
+
+    imu: Tuple[int, int, int]  # s16 x,y,z
+    high: int  # s16 高度
 
 
 @dataclass
@@ -443,32 +465,20 @@ class ReadDataParser:
             vol=unpack_from("!B", params, 2)[0],
             ssi=unpack_from("!B", params, 3)[0],
             state=unpack_from("!H", params, 4)[0],
-            mv_flag=unpack_from("!B", params, 6)[0],
-            mv_tagId=unpack_from("!H", params, 7)[0],
-            obs_dist=(
-                unpack_from("!B", params, 9)[0],
-                unpack_from("!B", params, 10)[0],
-                unpack_from("!B", params, 11)[0],
-                unpack_from("!B", params, 12)[0],
-            ),
-            imu=(
-                unpack_from("!h", params, 13)[0],
-                unpack_from("!h", params, 15)[0],
-                unpack_from("!h", params, 17)[0],
-            ),
-            loc=(
-                unpack_from("!h", params, 19)[0],
-                unpack_from("!h", params, 21)[0],
-                unpack_from("!h", params, 23)[0],
-            ),
-            # locErr=(
-            #     unpack_from("!b", params, 25)[0],
-            #     unpack_from("!b", params, 26)[0],
-            #     unpack_from("!b", params, 27)[0],
-            # ),
-            # ai_id=unpack_from("!B", params, 28)[0],
-            ai_id=unpack_from("!B", params, 25)[0],
-            other=list(params[26:len(params)]),
+            setting=unpack_from("!H", params, 6)[0],
+            mv_flag=unpack_from("!B", params, 8)[0],
+            mv_tagId=unpack_from("!H", params, 9)[0],
+            mv_x0=unpack_from("!b", params, 11)[0],
+            mv_y0=unpack_from("!b", params, 12)[0],
+            mv_x1=unpack_from("!b", params, 13)[0],
+            mv_y1=unpack_from("!b", params, 14)[0],
+            flow_qual=unpack_from("!b", params, 15)[0],
+            flow_x=unpack_from("!b", params, 16)[0],
+            flow_y=unpack_from("!b", params, 17)[0],
+            imu=(unpack_from("!h", params, 18)[0],
+                 unpack_from("!h", params, 20)[0],
+                 unpack_from("!h", params, 22)[0]),
+            high=unpack_from("!h", params, 24)[0],
         )
         with self.m_info_lock:
             self.m_fh0c_base = m_fh0c_base

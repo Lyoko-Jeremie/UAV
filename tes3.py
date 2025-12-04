@@ -15,12 +15,13 @@ if __name__ == '__main__':
 
     a = m.get_airplane_extended('FH0C:COM3')
 
-    a.takeoff(100)
-    m.sleep(10)
+    # a.takeoff(100)
+    # m.sleep(10)
+    #
+    # a.land()
+    # sleep(5)
 
-    a.land()
-    sleep(5)
-    # sleep(20)
+    sleep(20)
 
     a.shutdown()
     exit(0)
