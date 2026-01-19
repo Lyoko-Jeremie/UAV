@@ -1,26 +1,30 @@
 
 class UAVAirplaneManager:
     """无人机管理器类
-    合并管理 FH0A 和 FH0C 两种无人机
+    合并管理 FH0A、FH0C 和 OWL02 三种无人机
     通过端口号区分不同无人机
     例如：
         FH0C:COM3
         FH0A:COM6
+        OWL02:COM6:3  (OWL02格式为 OWL02:COMx:id，其中id为0-15)
     通过前缀调用对应的 AirplaneManager 实例
     """
 
     def __init__(self):
-        """初始化UAV管理器，导入FH0A和FH0C的AirplaneManager"""
+        """初始化UAV管理器，导入FH0A、FH0C和OWL02的AirplaneManager"""
         from .FH0A.AirplaneManagerAdapter import get_airplane_manager as get_fh0a_manager
         from .FH0C.AirplaneManagerAdapter import get_airplane_manager as get_fh0c_manager
+        from .owl2.owl02 import Owl02
 
         self.fh0a_manager = get_fh0a_manager()
         self.fh0c_manager = get_fh0c_manager()
+        self.owl02_controller = Owl02()
 
     def _parse_port(self, id: str):
-        """解析端口字符串，返回(类型, 端口)
+        """解析端口字符串，返回(类型, 端口/子ID)
         例如: "FH0C:COM3" -> ("FH0C", "COM3")
              "FH0A:COM6" -> ("FH0A", "COM6")
+             "OWL02:COM6:3" -> ("OWL02", "COM6:3")
         """
         if ':' in id:
             parts = id.split(':', 1)
@@ -36,6 +40,8 @@ class UAVAirplaneManager:
         drone_type, _ = self._parse_port(id)
         if drone_type == "FH0C":
             return self.fh0c_manager
+        elif drone_type == "OWL02":
+            return self.owl02_controller
         else:
             return self.fh0a_manager
 
@@ -53,19 +59,37 @@ class UAVAirplaneManager:
 
     def get_airplane(self, id: str):
         """获取飞机对象
-        :param id: 格式为 "类型:端口" 例如 "FH0C:COM3" 或 "FH0A:COM6"
+        :param id: 格式为 "类型:端口" 例如 "FH0C:COM3" 或 "FH0A:COM6" 或 "OWL02:COM6:3"
         """
         drone_type, port = self._parse_port(id)
-        manager = self._get_manager(id)
-        return manager.get_airplane(port)
+        if drone_type == "OWL02":
+            # OWL02 使用 p() 方法获取飞机，port格式为 "COMx:id"
+            return self.owl02_controller.p(port)
+        else:
+            manager = self._get_manager(id)
+            return manager.get_airplane(port)
 
     def get_airplane_extended(self, id: str):
         """获取扩展飞机对象
-        :param id: 格式为 "类型:端口" 例如 "FH0C:COM3" 或 "FH0A:COM6"
+        :param id: 格式为 "类型:端口" 例如 "FH0C:COM3" 或 "FH0A:COM6" 或 "OWL02:COM6:3"
         """
         drone_type, port = self._parse_port(id)
-        manager = self._get_manager(id)
-        return manager.get_airplane_extended(port)
+        if drone_type == "OWL02":
+            # OWL02 使用 p() 方法获取飞机，port格式为 "COMx:id"
+            return self.owl02_controller.p(port)
+        else:
+            manager = self._get_manager(id)
+            return manager.get_airplane_extended(port)
+
+    def add_uav(self, id: str):
+        """添加（注册）无人机
+        :param id: 格式为 "类型:端口" 例如 "OWL02:COM6:3"
+        注意：此方法主要用于 OWL02，FH0A 和 FH0C 在 get_airplane 时会自动创建
+        """
+        drone_type, port = self._parse_port(id)
+        if drone_type == "OWL02":
+            self.owl02_controller.add_uav(port)
+        # FH0A 和 FH0C 不需要预先注册
 
     def sleep(self, time):
         """休眠指定时间"""
@@ -82,6 +106,7 @@ class UAVAirplaneManager:
         """销毁所有无人机连接"""
         self.fh0a_manager.destroy()
         self.fh0c_manager.destroy()
+        self.owl02_controller.destroy()
 
 
 airplane_manager_singleton = UAVAirplaneManager()
