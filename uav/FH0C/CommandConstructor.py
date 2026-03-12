@@ -4,6 +4,7 @@ from enum import Enum
 
 from .QueueSignal import QueueSignal
 
+
 # 发送数据的协议包定义
 # 波特率 500000
 # 总包长固定为 32 Byte
@@ -106,10 +107,10 @@ class CommandConstructorCore:
             raise ValueError(f"params length {len(params)} exceeds maximum 13 bytes")
 
         # Copy params to cmd1 position (offset 1)
-        data_body[1:1+len(params)] = params
+        data_body[1:1 + len(params)] = params
 
         # Copy params to cmd2 position (offset 1+13=14), cmd1 and cmd2 are identical
-        data_body[14:14+len(params)] = params
+        data_body[14:14 + len(params)] = params
 
         # Set volume byte at position 27 (1 + 13 + 13)
         data_body[27] = 0x64  # volume = 100
@@ -508,5 +509,17 @@ class CommandConstructor(CommandConstructorCore):
     #     self.sendCommand(cmd)
     #
     #     pass
+
+    def send_cap_image(self):
+        """
+        无人机拍照指令。此指令触发无人机拍照。后续的传输和接收逻辑在 ImageReceiver 中实现。
+        :return:
+        """
+        # [0x00, 0x16, _order_count(), 0x01]
+        params = self._build_cmd_params(22, 0x01)
+        cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("move", cmd.hex(' '))
+        self.sendCommand(cmd)
+        pass
 
     pass
