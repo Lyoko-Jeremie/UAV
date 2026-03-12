@@ -5,15 +5,17 @@ import typing
 
 
 # 协议内容：
+# 同时只有一张图在拍照和传输
 # ===================================================
 # 发送给无人机
 #   id  22  count   u8 mode;//1拍照回传、2颜色采集回传、3颜色识别回传	photographMode
 # --> 套用原数据包格式：[0x00, 0x16, _order_count(), 0x01]  // 拍照指令
+# 已实现在 `CommandConstructor::send_cap_image()`
 # ===================================================
 # 无人机拍照后响应
-# 0xAA	len	0x0A	"    u8 id;          //哪个编号的飞机回传的数据包 TODO 是否就是 0x00
-#                        u16 count;      //数据包序号 TODO 拍照的第几张图片的序号？
-#                        u32 size;       //数据包大小，单位：byte（TODO 图片的总大小？）
+# 0xAA	len	0x0A	"    u8 id;          //哪个编号的飞机回传的数据包 , 0x00
+#                        u16 count;      //数据包序号 , 对应 send_cap_image 中填写的的 count
+#                        u32 size;       //数据包大小，单位：byte（图片的总大小）
 #                        u16 type = 0;   //数据包类型（0图片数据1离线程序2错误信息）"	SUM
 # header: [0xAA, len 0x0A, {0x0A]
 # payload: [id 1, count 2, size 4, type 2}, checksum 1]
@@ -23,7 +25,7 @@ import typing
 # 根据数据包大小 size 计算分包数量，每包发送 26 字节，并且发送应答帧，这时候的应答帧的mark应该赋值为0
 # TODO 重发 0 包是否会导致后续全部重发？重发某个包是否会导致后续全部重发？
 # 0xBB	len	0x0A	"    u8 id;          //与数据包开始的id一样（飞机id）
-#                        u16 count;      //与数据包开始的count一样， TODO 需要获取的图片的序号？如果不存在这个图片会返回什么？
+#                        u16 count;      //对应 send_cap_image 中填写的的 count
 #                        u32 mark;       //丢包序号"
 # [0xBB, len 0x08, {0x0A, id 1, count 2, mark(4)}, checksum 1]
 # 开始发送给无人机的指令：
@@ -37,15 +39,16 @@ import typing
 # header: [0xAA, len 0x1D, {0x0B]
 # payload: [units 2, buff 26, checksum 1]
 # <-- [0xAA, len 0x1D, {0x0B, units 2, buff 26}, checksum 1]
-# 其中 units 是分包的序号，从 0 开始递增，buff 是分包的数据内容， TODO 最后一个分包的 buff 不足 26 字节时，多余空间是否为 0 ？
+# 其中 units 是分包的序号，从 0 开始递增，buff 是分包的数据内容， 最后一个分包的 buff 不足 26 字节时，多余空间不用管，jpg解析会忽略它。
 # 总 units 数量 = ceil(size / 26)，当 units == ceil(size / 26) - 1 时，说明是最后一个分包
 # TODO 丢包重发的逻辑：是否需要使用超时时间和数据包序号跳变来检测是否丢包？
 # ===================================================
+# 飞机
 
 
 @dataclasses.dataclass
 class ImageInfo:
-    photo_id: int
+    count_cmd_id: int
     total_size: int
     total_packets: int
     # dict[packet index , tuple(packet checksum, packet data)]
@@ -64,7 +67,7 @@ class ImageInfo:
 
 
 class ImageReceiver:
-    # dict[photo_id, ImageInfo]
+    # dict[count_cmd_id, ImageInfo]
     image_table: dict[int, ImageInfo]
     # 超时检测定时器
     _timeout_timer: typing.Optional[threading.Timer]
@@ -75,3 +78,40 @@ class ImageReceiver:
     OUT_OF_ORDER_THRESHOLD: int = 3
     # 总超时时间（秒），超过此时间强制结束（丢包情况下约5秒）
     TOTAL_TIMEOUT: float = 6.0
+
+    def on_receive_image_pack_info(
+            self,
+            _fly_id: int,
+            photo_id: int,
+            total_size: int,
+            data_type: int,
+            origin_data: bytearray,
+    ):
+        """接收到无人机拍照回传的图片信息包，包含图片的总大小和数据包数量等信息"""
+        if data_type != 0:
+            # skip none-image data
+            return
+        total_packets = (total_size + 25) // 26  # 每包26字节，向上取整
+        self.image_table[photo_id] = ImageInfo(
+            photo_id=photo_id,
+            total_size=total_size,
+            total_packets=total_packets,
+        )
+        # 启动超时检测定时器
+        # TODO
+        print(f"Received image pack info: photo_id={photo_id}, total_size={total_size}, total_packets={total_packets}")
+        pass
+
+    def on_receive_image_packet_data(
+            self,
+            _fly_id: int,
+            photo_id: int,
+            packet_id: int,
+            data: bytes,
+            origin_data: bytearray,
+    ):
+        # TODO
+        pass
+
+
+

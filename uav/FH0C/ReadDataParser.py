@@ -7,6 +7,8 @@ from typing import List, Dict, Any, Tuple, Union, Literal
 from dataclasses import dataclass
 from threading import Lock
 
+from uav.FH0C.image_receiver import ImageReceiver
+
 Header_Base_Info = b'\xAA\x0D\x07'
 Header_Vision_Sensor_info = b'\xAA\x19\x30'
 Header_Sensor_info = b'\xAA\x14\x01'
@@ -17,6 +19,11 @@ Header_Others_SingleSetting_Info = b'\xAA\x00\x05'
 
 Header_Fh0cBase = b'\xAA\x1b\x01'
 
+Header_ImageReceiver_ImagePackInfo = b'\xAA\x0A\x0A'
+Header_ImageReceiver_ImagePackData = b'\xAA\x1D\x0B'
+
+
+# 当最后一个数据包时 , Header_ImageReceiver_ImagePackData 中的负载可能会短于26，这会导致第二个字节(len)变化，需要单独进行匹配
 
 #  typedef struct
 #  {
@@ -310,9 +317,11 @@ class ReadDataParser:
     m_multi_setting_info: MultiSettingInfo = None
     m_single_setting_info: SingleSettingInfo = None
     m_info_lock: Lock = Lock()
+    image_receiver: ImageReceiver | None
 
-    def __init__(self, q_read):
+    def __init__(self, q_read, image_receiver: ImageReceiver | None):
         self.q = q_read
+        self.image_receiver = image_receiver
         pass
 
     def push(self, data: Union[bytearray, bytes]):
@@ -352,8 +361,18 @@ class ReadDataParser:
                 pass
             elif header == Header_Fh0cBase:
                 data = self.read_buffer[0: size + 3]
-                # print("Header_Sensor_info", 0, size, len(data), data)
+                # print("Header_Fh0cBase", 0, size, len(data), data)
                 self.fh0c_base(data)
+                pass
+            elif header == Header_ImageReceiver_ImagePackInfo:
+                data = self.read_buffer[0: size + 3]
+                print("Header_ImageReceiver_ImagePackInfo", 0, size, len(data), data)
+                self.image_pack_info(data)
+                pass
+            elif header == Header_ImageReceiver_ImagePackData:
+                data = self.read_buffer[0: size + 3]
+                print("Header_ImageReceiver_ImagePackData", 0, size, len(data), data)
+                self.image_pack_data(data, size)
                 pass
             elif header == Header_Others:
                 data = self.read_buffer[0: size + 3]
@@ -374,6 +393,17 @@ class ReadDataParser:
                 elif flag == 5:  # b'\x05':
                     # Header_Others_SingleSetting_Info like
                     self.single_setting_info(data)
+                    pass
+                elif flag == 11:  # b'\x0B':
+                    # 只有 1 byte 时，长度 4
+                    # 完整包长 29 ， 完整包会被上面的匹配来捕获
+                    if 29 > size > 3:
+                        # Header_ImageReceiver_ImagePackData 变长情况，图片数据的最后一个数据包
+                        print("Header_ImageReceiver_ImagePackData", 0, size, len(data), data)
+                        self.image_pack_data(data, size)
+                    else:
+                        print("Header_ImageReceiver_ImagePackData like but bad len:", 0, size, len(data), data)
+                        pass
                     pass
                 else:
                     # don't care
@@ -481,6 +511,46 @@ class ReadDataParser:
             self.m_fh0c_base = m_fh0c_base
             pass
         print("self._fh0c_base", m_fh0c_base)
+        pass
+
+    def image_pack_info(self, data: bytearray):
+        # 无人机拍照后响应
+        # 0xAA	len	0x0A	"    u8 id;          //哪个编号的飞机回传的数据包 TODO 是否就是 0x00
+        #                        u16 count;      //数据包序号 TODO 拍照的第几张图片的序号？
+        #                        u32 size;       //数据包大小，单位：byte（TODO 图片的总大小？）
+        #                        u16 type = 0;   //数据包类型（0图片数据1离线程序2错误信息）"	SUM
+        # header: [0xAA, len 0x0A, {0x0A]
+        # payload: [id 1, count 2, size 4, type 2}, checksum 1]
+        # <-- [0xAA, len 0x0A, {0x0A, id 1, count 2, size 4, type 2}, checksum 1]
+        params = data[2:len(data) - 1]
+        self.image_receiver.on_receive_image_pack_info(
+            _fly_id=unpack_from("!B", params, 1)[0],
+            photo_id=unpack_from("!H", params, 2)[0],
+            total_size=unpack_from("!I", params, 4)[0],
+            data_type=unpack_from("!H", params, 8)[0],
+            origin_data=data,
+        )
+        pass
+
+    def image_pack_data(self, data: bytearray, size_len: int):
+        # 无人机真实发送数据包的格式：
+        # 0xAA	len	0x0B	"    u16 units;      //包序号
+        #                        u8 buff[26];    //数据"	SUM
+        # header: [0xAA, len 0x1D, {0x0B]
+        # payload: [units 2, buff 26, checksum 1]
+        # <-- [0xAA, len 0x1D, {0x0B, units 2, buff 26}, checksum 1]
+        # 其中 units 是分包的序号，从 0 开始递增，buff 是分包的数据内容
+        # 注意：最后一个包 buff 可能 不足 26 字节，这时 len 会变小，buff 的长度也会变小
+        params = data[2:len(data) - 1]
+        # TODO
+        buff_size = size_len - 3
+        self.image_receiver.on_receive_image_packet_data(
+            _fly_id=unpack_from("!B", params, 1)[0],
+            photo_id=unpack_from("!H", params, 2)[0],
+            units=unpack_from("!H", params, 4)[0],
+            data=unpack_from("!26s", params, 6)[0],
+            origin_data=data,
+        )
         pass
 
     def other(self, data: bytearray):
