@@ -6,6 +6,7 @@ from typing import Dict, Optional
 from time import sleep
 
 from .SerialThread import SerialThread
+from .image_receiver import ImageReceiver
 
 
 class AirplaneController(object):
@@ -13,9 +14,11 @@ class AirplaneController(object):
     此类是到PhantasyIslandPythonRemoteControl库中AirplaneController的适配器，是对SerialThread的wrapper
     """
     s: SerialThread
+    image_receiver: ImageReceiver
 
     def __init__(self, port):
         self.s = SerialThread(port=port)
+        self.image_receiver = ImageReceiver(self)
         pass
 
     def takeoff(self, high: int, ):
@@ -253,6 +256,10 @@ class AirplaneControllerExtended(AirplaneController):
 
     def shutdown(self):
         self.s.shutdown()
+        pass
+
+    def send_cap_image(self):
+        self.image_receiver.send_cap_image()
         pass
 
     pass

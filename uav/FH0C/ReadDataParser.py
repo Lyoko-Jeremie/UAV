@@ -525,7 +525,7 @@ class ReadDataParser:
         params = data[2:len(data) - 1]
         self.image_receiver.on_receive_image_pack_info(
             _fly_id=unpack_from("!B", params, 1)[0],
-            photo_id=unpack_from("!H", params, 2)[0],
+            photo_count_cmd_id=unpack_from("!H", params, 2)[0],
             total_size=unpack_from("!I", params, 4)[0],
             data_type=unpack_from("!H", params, 8)[0],
             origin_data=data,
@@ -542,13 +542,13 @@ class ReadDataParser:
         # 其中 units 是分包的序号，从 0 开始递增，buff 是分包的数据内容
         # 注意：最后一个包 buff 可能 不足 26 字节，这时 len 会变小，buff 的长度也会变小
         params = data[2:len(data) - 1]
-        # TODO
         buff_size = size_len - 3
+        # 去除开头和结尾
+        buff = params[2: 2 + buff_size]
         self.image_receiver.on_receive_image_packet_data(
             _fly_id=unpack_from("!B", params, 1)[0],
-            photo_id=unpack_from("!H", params, 2)[0],
-            units=unpack_from("!H", params, 4)[0],
-            data=unpack_from("!26s", params, 6)[0],
+            packet_id=unpack_from("!H", params, 4)[0],
+            buff=buff,
             origin_data=data,
         )
         pass

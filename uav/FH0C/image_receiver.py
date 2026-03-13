@@ -3,6 +3,10 @@ import threading
 import time
 import typing
 
+if typing.TYPE_CHECKING:
+    from . import AirplaneController
+    from .CommandConstructor import CmdType
+
 
 # 协议内容：
 # 同时只有一张图在拍照和传输
@@ -10,11 +14,11 @@ import typing
 # 发送给无人机
 #   id  22  count   u8 mode;//1拍照回传、2颜色采集回传、3颜色识别回传	photographMode
 # --> 套用原数据包格式：[0x00, 0x16, _order_count(), 0x01]  // 拍照指令
-# 已实现在 `CommandConstructor::send_cap_image()`
+# 已实现在 `send_cap_image()`
 # ===================================================
 # 无人机拍照后响应
 # 0xAA	len	0x0A	"    u8 id;          //哪个编号的飞机回传的数据包 , 0x00
-#                        u16 count;      //数据包序号 , 对应 send_cap_image 中填写的的 count
+#                        u16 count;      //数据包序号 , 对应 send_cap_image 中的 count
 #                        u32 size;       //数据包大小，单位：byte（图片的总大小）
 #                        u16 type = 0;   //数据包类型（0图片数据1离线程序2错误信息）"	SUM
 # header: [0xAA, len 0x0A, {0x0A]
@@ -49,8 +53,8 @@ import typing
 @dataclasses.dataclass
 class ImageInfo:
     count_cmd_id: int
-    total_size: int
-    total_packets: int
+    total_size: int = 0
+    total_packets: int = 0
     # dict[packet index , tuple(packet checksum, packet data)]
     # every packet is 26 bytes
     packet_cache: dict[int, tuple[int, bytes]] = dataclasses.field(default_factory=dict)
@@ -67,8 +71,9 @@ class ImageInfo:
 
 
 class ImageReceiver:
-    # dict[count_cmd_id, ImageInfo]
-    image_table: dict[int, ImageInfo]
+    airplane: AirplaneController
+    # 任何时候只存在一张图片
+    image_instance: ImageInfo | None = None
     # 超时检测定时器
     _timeout_timer: typing.Optional[threading.Timer]
     # 包超时时间（秒），每个包约20ms，设置为300ms（约10个包的时间）可容忍一定波动
@@ -78,11 +83,17 @@ class ImageReceiver:
     OUT_OF_ORDER_THRESHOLD: int = 3
     # 总超时时间（秒），超过此时间强制结束（丢包情况下约5秒）
     TOTAL_TIMEOUT: float = 6.0
+    # 接收完成的图片表
+    received_image_cache: dict[int, ImageInfo]
+
+    def __init__(self, airplane: AirplaneController):
+        self.received_image_cache = {}
+        self.airplane = airplane
 
     def on_receive_image_pack_info(
             self,
             _fly_id: int,
-            photo_id: int,
+            photo_count_cmd_id: int,
             total_size: int,
             data_type: int,
             origin_data: bytearray,
@@ -92,26 +103,50 @@ class ImageReceiver:
             # skip none-image data
             return
         total_packets = (total_size + 25) // 26  # 每包26字节，向上取整
-        self.image_table[photo_id] = ImageInfo(
-            photo_id=photo_id,
-            total_size=total_size,
-            total_packets=total_packets,
-        )
+        if self.image_instance is None:
+            # TODO clean it
+            return
+        if self.image_instance.count_cmd_id != photo_count_cmd_id:
+            # TODO clean it
+            return
+        self.image_instance.total_size = total_size
+        self.image_instance.total_packets = total_packets
         # 启动超时检测定时器
         # TODO
-        print(f"Received image pack info: photo_id={photo_id}, total_size={total_size}, total_packets={total_packets}")
+        print(
+            f"Received image pack info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
         pass
 
     def on_receive_image_packet_data(
             self,
             _fly_id: int,
-            photo_id: int,
             packet_id: int,
-            data: bytes,
+            buff: bytes,
             origin_data: bytearray,
     ):
+        if self.image_instance is None:
+            # TODO clean it
+            return
         # TODO
         pass
 
+    def _when_received_end(self):
+        # TODO clean
+        self.image_instance = None
+        pass
 
-
+    def send_cap_image(self):
+        """
+        无人机拍照指令。此指令触发无人机拍照。后续的传输和接收逻辑在 ImageReceiver 中实现。
+        :return:
+        """
+        cc = self.airplane.s.ss
+        # [0x00, 0x16, _order_count(), 0x01]
+        (params, order_count) = cc.build_cmd_params(22, 0x01)
+        cmd = cc.join_cmd(CmdType.SINGLE_CONTROL, params)
+        print("send_cap_image", order_count, cmd.hex(' '))
+        cc.sendCommand(cmd)
+        self.image_instance = ImageInfo(
+            count_cmd_id=order_count,
+        )
+        pass
