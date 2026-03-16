@@ -94,7 +94,7 @@ class SerialThreadCore:
     thead_local_write: ThreadLocal = None
     thead_local_read: ThreadLocal = None
 
-    def __init__(self, port: str):
+    def __init__(self, port: str, airplane: 'AirplaneController'):
         """
         The __init__ function is called when an instance of the class is created.
         It initializes attributes that are specific to each instance, and sets up any
@@ -120,7 +120,7 @@ class SerialThreadCore:
         self.thead_local_read = ThreadLocal()
         self.thead_local_read.q = self.q_read
         self.thead_local_read.s = self.s
-        self.thead_local_read.rdp = ReadDataParser(self.thead_local_read.q)
+        self.thead_local_read.rdp = ReadDataParser(self.thead_local_read.q, airplane)
         self.thead_local_read.t = Thread(target=task_read, args=(self.thead_local_read,))
 
         self.thead_local_write.t.start()
@@ -223,8 +223,8 @@ class SerialThread(SerialThreadCore):
 
     ss: CommandConstructor = None
 
-    def __init__(self, port: str):
-        super().__init__(port)
+    def __init__(self, port: str, airplane: 'AirplaneController'):
+        super().__init__(port, airplane=airplane)
         self.ss = CommandConstructor(self.thead_local_write.q)
         print("ss", self.ss)
         pass
@@ -244,49 +244,49 @@ class SerialThread(SerialThreadCore):
 #     pass
 
 
-# TODO manual test code on here
-if __name__ == '__main__':
-    # st = SerialThreadWrapper("COM3")
-    st = SerialThread("COM3")
-    sleep(2)
-    # d = bytearray(b'\xBB\x0B\xF3\x08\x02\x00\x00\x00\x02')
-    # sum = sum(d)
-    # print(sum, sum & 0xFF)
-    # d.append(sum & 0xFF)
-    # print(d.hex(' '))
-    # st.send_cmd(d)
-    print("st", st)
-    print("st.s", st.s)
-    print("st.ss", st.ss)
-    print("st.call()", st.send())
-    # print("st.hardware_info", st.hardware_info())
-    # st.call().led(2, 255, 0, 255)
-    # st.send().read_hardware_setting()
-    # sleep(0.5)
-    # st.send().read_multi_setting()
-    # sleep(0.5)
-    # st.send().read_single_setting()
-    sleep(0.5)
-    st.send().takeoff(50)
-    sleep(5)
-    st.send().up(50)
-    sleep(1)
-    # print("st.base_info", st.base_info())
-    # print("st.sensor_info", st.sensor_info())
-    # print("st.vision_sensor_info", st.vision_sensor_info())
-    sleep(5)
-    # st.send().flip_forward(1)
-    # sleep(5)
-    # st.send().cw(90)
-    # sleep(5)
-    st.send().land()
-    sleep(1)
-    # print("st.base_info", st.base_info())
-    # print("st.sensor_info", st.sensor_info())
-    # print("st.vision_sensor_info", st.vision_sensor_info())
-    # print("st.hardware_info", st.hardware_info())
-    # print("st.single_setting_info", st.single_setting_info())
-    # print("st.multi_setting_info", st.multi_setting_info())
-    sleep(1)
-    st.shutdown()
-    pass
+# # TODO manual test code on here
+# if __name__ == '__main__':
+#     # st = SerialThreadWrapper("COM3")
+#     st = SerialThread("COM3")
+#     sleep(2)
+#     # d = bytearray(b'\xBB\x0B\xF3\x08\x02\x00\x00\x00\x02')
+#     # sum = sum(d)
+#     # print(sum, sum & 0xFF)
+#     # d.append(sum & 0xFF)
+#     # print(d.hex(' '))
+#     # st.send_cmd(d)
+#     print("st", st)
+#     print("st.s", st.s)
+#     print("st.ss", st.ss)
+#     print("st.call()", st.send())
+#     # print("st.hardware_info", st.hardware_info())
+#     # st.call().led(2, 255, 0, 255)
+#     # st.send().read_hardware_setting()
+#     # sleep(0.5)
+#     # st.send().read_multi_setting()
+#     # sleep(0.5)
+#     # st.send().read_single_setting()
+#     sleep(0.5)
+#     st.send().takeoff(50)
+#     sleep(5)
+#     st.send().up(50)
+#     sleep(1)
+#     # print("st.base_info", st.base_info())
+#     # print("st.sensor_info", st.sensor_info())
+#     # print("st.vision_sensor_info", st.vision_sensor_info())
+#     sleep(5)
+#     # st.send().flip_forward(1)
+#     # sleep(5)
+#     # st.send().cw(90)
+#     # sleep(5)
+#     st.send().land()
+#     sleep(1)
+#     # print("st.base_info", st.base_info())
+#     # print("st.sensor_info", st.sensor_info())
+#     # print("st.vision_sensor_info", st.vision_sensor_info())
+#     # print("st.hardware_info", st.hardware_info())
+#     # print("st.single_setting_info", st.single_setting_info())
+#     # print("st.multi_setting_info", st.multi_setting_info())
+#     sleep(1)
+#     st.shutdown()
+#     pass

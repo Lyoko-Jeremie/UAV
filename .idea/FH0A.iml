@@ -13,7 +13,7 @@
       <excludeFolder url="file://$MODULE_DIR$/uav/FH0A.egg-info" />
       <excludeFolder url="file://$MODULE_DIR$/uav/UAV.egg-info" />
     </content>
-    <orderEntry type="jdk" jdkName="Python 3.13 (FH0A)" jdkType="Python SDK" />
+    <orderEntry type="jdk" jdkName="Python 3.12 (FH0A)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="PackageRequirementsSettings">

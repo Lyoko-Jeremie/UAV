@@ -1,5 +1,5 @@
 from .SerialThread import SerialThread
-from .FH0CManager import FH0CManager
+# from .FH0CManager import FH0CManager
 from .CommandConstructor import CommandConstructor
 # from .ReadDataParser import BaseInfo, SensorInfo, VisionSensorInfo, HardwareInfo, SingleSettingInfo, MultiSettingInfo
 
