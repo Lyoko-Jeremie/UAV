@@ -117,13 +117,13 @@ class ImageReceiver:
     image_instance: ImageInfo | None = None
     # 超时检测定时器
     _timeout_timer: typing.Optional[threading.Timer]
-    # 包超时时间（秒），每个包约20ms，设置为300ms（约10个包的时间）可容忍一定波动
-    PACKET_TIMEOUT: float = 3
+    # 包超时时间（秒）- 增大超时时间，允许重传周期内的重复包接收完成
+    PACKET_TIMEOUT: float = 1.0
     # 乱序容忍阈值：收到的包索引比期望索引大于此值时才认为丢包
-    # 由于包间有业务数据干扰，允许轻微乱序（约3个包）
-    OUT_OF_ORDER_THRESHOLD: int = 3
-    # 总超时时间（秒），超过此时间强制结束（丢包情况下约5秒）
-    TOTAL_TIMEOUT: float = 12.0
+    # 增大阈值，减少不必要的中途重传（重传会导致大量重复包，反而降低效率）
+    OUT_OF_ORDER_THRESHOLD: int = 20
+    # 总超时时间（秒），超过此时间强制结束
+    TOTAL_TIMEOUT: float = 10.0
     # 接收完成的图片表
     # count_cmd_id_from_airplane ImageInfo
     received_image_cache: dict[int, ImageInfo]
@@ -225,12 +225,14 @@ class ImageReceiver:
                 if existing_data == buff:
                     # 完全相同的数据，忽略
                     print(f"Duplicate packet {packet_id} with same data, ignored")
-                    return
                 else:
                     # 数据不同但都通过了 checksum 验证
                     # 保留已有数据，因为无人机循环传输时先收到的更可能是正确的
                     print(f"Duplicate packet {packet_id} with different data! Keeping original.")
-                    return
+                # 重复包也要重置定时器，因为数据流仍在正常传输
+                # 这是关键修复：防止在接收重复包期间定时器超时触发错误的重传
+                self._start_timeout_timer()
+                return
 
             # 存储数据包（不再需要保存 checksum，因为已在 ReadDataParser 验证）
             self.image_instance.packet_cache[packet_id] = (0, bytes(buff))
