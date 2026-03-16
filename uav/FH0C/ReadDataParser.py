@@ -563,8 +563,8 @@ class ReadDataParser:
         # 注意：最后一个包 buff 可能 不足 26 字节，这时 len 会变小，buff 的长度也会变小
         params = data[2:len(data) - 1]
         buff_size = size_len - 3
-        # 去除开头和结尾
-        buff = params[2: 2 + buff_size]
+        #
+        buff = params[3:]
         self.image_receiver.on_receive_image_packet_data(
             size_len=size_len,
             packet_id=unpack_from("<H", params, 1)[0],
