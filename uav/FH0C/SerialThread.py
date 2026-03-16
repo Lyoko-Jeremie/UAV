@@ -82,6 +82,7 @@ def task_write(thead_local: ThreadLocal):
             if thead_local.latest_cmd_send_count_limit is not None and thead_local.latest_cmd_send_count > thead_local.latest_cmd_send_count_limit:
                 print("task_write: cmd send count limit reached, clean latest_cmd")
                 thead_local.latest_cmd = None
+                thead_local.latest_cmd_id = None
                 thead_local.latest_cmd_send_count_limit = None
                 thead_local.latest_cmd_send_count = 0
                 pass
