@@ -367,17 +367,17 @@ class ReadDataParser:
                 pass
             elif header == Header_ImageReceiver_ImagePackInfo:
                 data = self.read_buffer[0: size + 3]
-                print("Header_ImageReceiver_ImagePackInfo", 0, size, len(data), data.hex(' '))
+                # print("Header_ImageReceiver_ImagePackInfo", 0, size, len(data), data.hex(' '))
                 self.image_pack_info(data)
                 pass
             elif header == Header_ImageReceiver_ImagePackData:
                 data = self.read_buffer[0: size + 3]
-                print("Header_ImageReceiver_ImagePackData", 0, size, len(data), data.hex(' '))
+                # print("Header_ImageReceiver_ImagePackData", 0, size, len(data), data.hex(' '))
                 self.image_pack_data(data, size)
                 pass
             elif header == Header_ImageReceiver_ImagePackData_EOF:
                 data = self.read_buffer[0: size + 3]
-                print("Header_ImageReceiver_ImagePackData_EOF", 0, size, len(data), data.hex(' '))
+                # print("Header_ImageReceiver_ImagePackData_EOF", 0, size, len(data), data.hex(' '))
                 self.image_pack_data_eof(data, size)
                 pass
             elif header == Header_Others:
@@ -405,7 +405,7 @@ class ReadDataParser:
                     # 完整包长 29 ， 完整包会被上面的匹配来捕获
                     if 29 > size > 3:
                         # Header_ImageReceiver_ImagePackData 变长情况，图片数据的最后一个数据包
-                        print("Header_ImageReceiver_ImagePackData", 0, size, len(data), data.hex(' '))
+                        # print("Header_ImageReceiver_ImagePackData", 0, size, len(data), data.hex(' '))
                         self.image_pack_data(data, size)
                     else:
                         print("Header_ImageReceiver_ImagePackData like but bad len:", 0, size, len(data), data.hex(' '))
