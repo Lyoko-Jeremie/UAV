@@ -9,10 +9,12 @@ from .QueueSignal import QueueSignal
 
 
 class ThreadLocal:
-    """used by thead"""
-    latest_cmd: bytearray = None
-    # (QueueSignal, data)
-    q: Queue[tuple[QueueSignal, bytearray]] = None
+    """used by thread"""
+    latest_cmd: bytearray | None = None
+    latest_cmd_send_count = 0
+    latest_cmd_send_count_limit: None | int = None
+    # (QueueSignal, data, int|None)
+    q: Queue[tuple[QueueSignal, bytearray] | tuple[QueueSignal, bytearray, int]] = None
     s: serial.Serial = None
     t: Thread = None
     exit_queue: Queue = Queue()
@@ -44,9 +46,17 @@ def task_write(thead_local: ThreadLocal):
             # check if new command comes from CommandConstructor
             d = thead_local.q.get(block=False, timeout=-1)
             if isinstance(d, tuple):
-                print("Tuple:", (d[0], d[1].hex(' ')))
-                if d[0] is QueueSignal.CMD and len(d[1]) > 0:
+                if d[0] is QueueSignal.CLEAN:
+                    thead_local.latest_cmd = None
+                    pass
+                elif d[0] is QueueSignal.CMD and len(d[1]) > 0:
+                    print("task_write Tuple:", (d[0], d[1].hex(' ')))
                     thead_local.latest_cmd = d[1]
+                    thead_local.latest_cmd_send_count = 0
+                    if len(d) > 2 and d[2] is not None:
+                        thead_local.latest_cmd_send_count_limit = d[2]
+                    else:
+                        thead_local.latest_cmd_send_count_limit = None
                     pass
                 pass
         except Empty:
@@ -56,6 +66,12 @@ def task_write(thead_local: ThreadLocal):
         if thead_local.latest_cmd is not None and len(thead_local.latest_cmd) > 0:
             # print("write:", thead_local.latest_cmd)
             thead_local.s.write(thead_local.latest_cmd)
+            thead_local.latest_cmd_send_count += 1
+            if (thead_local.latest_cmd_send_count_limit is not None) and thead_local.latest_cmd_send_count > thead_local.latest_cmd_send_count_limit:
+                thead_local.latest_cmd = None
+                thead_local.latest_cmd_send_count_limit = None
+                thead_local.latest_cmd_send_count = 0
+                pass
         pass
     print("task_write done.")
     pass
@@ -233,7 +249,6 @@ class SerialThread(SerialThreadCore):
         return self.ss
 
     pass
-
 
 # class SerialThreadWrapper(SerialThread):
 #
