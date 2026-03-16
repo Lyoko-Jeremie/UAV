@@ -515,9 +515,9 @@ class ReadDataParser:
 
     def image_pack_info(self, data: bytearray):
         # 无人机拍照后响应
-        # 0xAA	len	0x0A	"    u8 id;          //哪个编号的飞机回传的数据包 TODO 是否就是 0x00
-        #                        u16 count;      //数据包序号 TODO 拍照的第几张图片的序号？
-        #                        u32 size;       //数据包大小，单位：byte（TODO 图片的总大小？）
+        # 0xAA	len	0x0A	"    u8 id;          //哪个编号的飞机回传的数据包  0x00
+        #                        u16 count;      //命令序号 order_count
+        #                        u32 size;       //数据包大小，单位：byte（ 图片的总大小 ）
         #                        u16 type = 0;   //数据包类型（0图片数据1离线程序2错误信息）"	SUM
         # header: [0xAA, len 0x0A, {0x0A]
         # payload: [id 1, count 2, size 4, type 2}, checksum 1]
@@ -546,8 +546,8 @@ class ReadDataParser:
         # 去除开头和结尾
         buff = params[2: 2 + buff_size]
         self.image_receiver.on_receive_image_packet_data(
-            _fly_id=unpack_from("!B", params, 1)[0],
-            packet_id=unpack_from("!H", params, 4)[0],
+            size_len=size_len,
+            packet_id=unpack_from("!H", params, 1)[0],
             buff=buff,
             origin_data=data,
         )

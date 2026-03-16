@@ -2,6 +2,7 @@ import dataclasses
 import threading
 import time
 import typing
+from struct import pack
 
 if typing.TYPE_CHECKING:
     from . import AirplaneController
@@ -36,6 +37,8 @@ if typing.TYPE_CHECKING:
 # --> [0xBB, len 0x08, {0x0A, id 1, count 2, (0x00_00_00_00) 4}, checksum 1]  // 让无人机开始发送数据
 # --> [0xBB, len 0x08, {0x0A, id 1, count 2, (0xnn_nn_nn_nn) 4}, checksum 1]  // 让无人机重发指定编号 0xnn_nn_nn_nn 的分包
 # --> [0xBB, len 0x08, {0x0A, id 1, count 2, (0xFF_FF_FF_FF) 4}, checksum 1]  // 全部传输已完成，无人机删除存储的图像缓存
+# 注意，无人机的重传逻辑是，从收到重传指令对应的包编号开始按顺序重传该包以及后续包，在传输到结尾后循环从重传指令处再次开始按顺序传输，直到5秒内仍然没有收到结束指令时超时，或在收到结束指令时结束
+# 也就意味着，发送0开始传输，一直循环传输0-N，当发送开始/重传指令包M时，一直循环传输M-N。
 # ===================================================
 # 无人机真实发送数据包的格式：
 # 0xAA	len	0x0B	"    u16 units;      //包序号
@@ -90,6 +93,18 @@ class ImageReceiver:
         self.received_image_cache = {}
         self.airplane = airplane
 
+    def _check_sum1(self, data: bytearray):
+        """
+        impl checksum algorithm
+        """
+        return bytearray([sum(data) & 0xFF])
+
+    def _check_sum2(self, header: bytearray, params: bytearray):
+        """
+        impl checksum algorithm
+        """
+        return bytearray([sum(header + params) & 0xFF])
+
     def on_receive_image_pack_info(
             self,
             _fly_id: int,
@@ -105,21 +120,24 @@ class ImageReceiver:
         total_packets = (total_size + 25) // 26  # 每包26字节，向上取整
         if self.image_instance is None:
             # TODO clean it
+            self._clean_remote_image()
             return
         if self.image_instance.count_cmd_id != photo_count_cmd_id:
             # TODO clean it
+            self._clean_remote_image()
             return
         self.image_instance.total_size = total_size
         self.image_instance.total_packets = total_packets
         # 启动超时检测定时器
         # TODO
+        self._start_time_received()
         print(
-            f"Received image pack info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
+            f"Received image info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
         pass
 
     def on_receive_image_packet_data(
             self,
-            _fly_id: int,
+            size_len: int,
             packet_id: int,
             buff: bytes,
             origin_data: bytearray,
@@ -131,9 +149,51 @@ class ImageReceiver:
         pass
 
     def _when_received_end(self):
+        self._clean_remote_image()
         # TODO clean
         self.image_instance = None
         pass
+
+    def _start_time_received(self):
+        cc = self.airplane.s.ss
+        (order_count, cmd) = self._send_transfer_pack(0x00_00_00_00)
+        print("_start_time_received", order_count, cmd.hex(' '))
+        cc.sendCommand(cmd)
+        pass
+
+    def _re_transfer_pack(self, pack_id: int):
+        cc = self.airplane.s.ss
+        (order_count, cmd) = self._send_transfer_pack(pack_id)
+        print("_re_transfer_pack", order_count, cmd.hex(' '))
+        cc.sendCommand(cmd)
+        pass
+
+    def _clean_remote_image(self):
+        cc = self.airplane.s.ss
+        (order_count, cmd) = self._send_transfer_pack(0xFF_FF_FF_FF)
+        print("_clean_remote_image", order_count, cmd.hex(' '))
+        cc.sendCommand(cmd)
+        pass
+
+    def _send_transfer_pack(self, pack_id: int):
+        """
+        发送传输指令
+        pack_id: 0xNN_NN_NN_NN 从某个包编号开始循环传输
+        pack_id: 0x00_00_00_00 开始传输，（开始从0循环传输）
+        pack_id: 0xFF_FF_FF_FF 结束传输
+        """
+        cc = self.airplane.s.ss
+        # [0xBB, len 0x08, {0x0A, id 1, count 2, (0xFF_FF_FF_FF) 4}, checksum 1]
+        order_count = cc.order_count()
+        cmd = bytearray([
+            0xBB, 0X08,
+            0x0A, 0x00,
+            pack("<h", order_count),  # Int16LE
+            pack("<I", pack_id),  # UInt32LE
+        ])
+        checksum = self._check_sum1(cmd)
+        cmd = cmd + checksum
+        return (order_count, cmd)
 
     def send_cap_image(self):
         """

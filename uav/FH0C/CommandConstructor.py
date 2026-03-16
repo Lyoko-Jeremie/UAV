@@ -42,7 +42,7 @@ class CommandConstructorCore:
     """
     q_write: Queue = None
 
-    def _order_count(self):
+    def order_count(self):
         """
         the order_count generator, it generate new order number
         """
@@ -150,7 +150,7 @@ class CommandConstructor(CommandConstructorCore):
         params = bytearray()
         params.append(0x00)  # ID byte (always 0x00)
         params.append(cmd & 0xFF)  # CMD byte
-        order_count = self._order_count()
+        order_count = self.order_count()
         params.append(order_count & 0xFF)  # COUNT byte (order count)
 
         # Append parameter bytes
