@@ -17,8 +17,8 @@ class AirplaneController(object):
     image_receiver: ImageReceiver
 
     def __init__(self, port):
-        self.s = SerialThread(port=port, airplane=self)
         self.image_receiver = ImageReceiver(self)
+        self.s = SerialThread(port=port, airplane=self)
         pass
 
     def takeoff(self, high: int, ):

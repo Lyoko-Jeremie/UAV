@@ -336,7 +336,7 @@ class ReadDataParser:
         """
         this method do the core task that split bytearray buffer stream into packages.
         """
-        print(self.read_buffer)
+        # print(self.read_buffer.hex(' '))
         while len(self.read_buffer) > 3:
             header = self.read_buffer[0:3]
             size = header[1]
@@ -366,12 +366,12 @@ class ReadDataParser:
                 pass
             elif header == Header_ImageReceiver_ImagePackInfo:
                 data = self.read_buffer[0: size + 3]
-                print("Header_ImageReceiver_ImagePackInfo", 0, size, len(data), data)
+                print("Header_ImageReceiver_ImagePackInfo", 0, size, len(data), data.hex(' '))
                 self.image_pack_info(data)
                 pass
             elif header == Header_ImageReceiver_ImagePackData:
                 data = self.read_buffer[0: size + 3]
-                print("Header_ImageReceiver_ImagePackData", 0, size, len(data), data)
+                print("Header_ImageReceiver_ImagePackData", 0, size, len(data), data.hex(' '))
                 self.image_pack_data(data, size)
                 pass
             elif header == Header_Others:
@@ -399,10 +399,10 @@ class ReadDataParser:
                     # 完整包长 29 ， 完整包会被上面的匹配来捕获
                     if 29 > size > 3:
                         # Header_ImageReceiver_ImagePackData 变长情况，图片数据的最后一个数据包
-                        print("Header_ImageReceiver_ImagePackData", 0, size, len(data), data)
+                        print("Header_ImageReceiver_ImagePackData", 0, size, len(data), data.hex(' '))
                         self.image_pack_data(data, size)
                     else:
-                        print("Header_ImageReceiver_ImagePackData like but bad len:", 0, size, len(data), data)
+                        print("Header_ImageReceiver_ImagePackData like but bad len:", 0, size, len(data), data.hex(' '))
                         pass
                     pass
                 else:
@@ -510,7 +510,8 @@ class ReadDataParser:
         with self.m_info_lock:
             self.m_fh0c_base = m_fh0c_base
             pass
-        print("self._fh0c_base", m_fh0c_base)
+        # print("self._fh0c_base", m_fh0c_base)
+        # self._fh0c_base Fh0cBase(id=0, vol=41, ssi=100, state=21260, setting=255, mv_flag=255, mv_tagId=65535, mv_x0=-10, mv_y0=-1, mv_x1=114, mv_y1=-1, flow_qual=-91, flow_x=-1, flow_y=0, imu=(0, 3, 0), high=0)
         pass
 
     def image_pack_info(self, data: bytearray):
@@ -524,10 +525,10 @@ class ReadDataParser:
         # <-- [0xAA, len 0x0A, {0x0A, id 1, count 2, size 4, type 2}, checksum 1]
         params = data[2:len(data) - 1]
         self.image_receiver.on_receive_image_pack_info(
-            _fly_id=unpack_from("!B", params, 1)[0],
-            photo_count_cmd_id=unpack_from("!H", params, 2)[0],
-            total_size=unpack_from("!I", params, 4)[0],
-            data_type=unpack_from("!H", params, 8)[0],
+            _fly_id=unpack_from("<B", params, 1)[0],
+            photo_count_cmd_id=unpack_from("<H", params, 2)[0],
+            total_size=unpack_from("<I", params, 4)[0],
+            data_type=unpack_from("<H", params, 8)[0],
             origin_data=data,
         )
         pass
@@ -547,7 +548,7 @@ class ReadDataParser:
         buff = params[2: 2 + buff_size]
         self.image_receiver.on_receive_image_packet_data(
             size_len=size_len,
-            packet_id=unpack_from("!H", params, 1)[0],
+            packet_id=unpack_from("<H", params, 1)[0],
             buff=buff,
             origin_data=data,
         )

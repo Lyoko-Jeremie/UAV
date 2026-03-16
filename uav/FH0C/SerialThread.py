@@ -120,7 +120,7 @@ class SerialThreadCore:
         self.thead_local_read = ThreadLocal()
         self.thead_local_read.q = self.q_read
         self.thead_local_read.s = self.s
-        self.thead_local_read.rdp = ReadDataParser(self.thead_local_read.q, airplane)
+        self.thead_local_read.rdp = ReadDataParser(self.thead_local_read.q, airplane.image_receiver)
         self.thead_local_read.t = Thread(target=task_read, args=(self.thead_local_read,))
 
         self.thead_local_write.t.start()

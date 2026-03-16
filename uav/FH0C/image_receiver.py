@@ -51,6 +51,7 @@ if typing.TYPE_CHECKING:
 # 其中 units 是分包的序号，从 0 开始递增，buff 是分包的数据内容， 最后一个分包的 buff 不足 26 字节时，多余空间不用管，jpg解析会忽略它。
 # 总 units 数量 = ceil(size / 26)，当 units == ceil(size / 26) - 1 时，说明是最后一个分包
 # TODO 丢包重发的逻辑：是否需要使用超时时间和数据包序号跳变来检测是否丢包？
+# [aa 03 0b ff ff b6] TODO ?????
 # ===================================================
 
 
@@ -68,6 +69,7 @@ if typing.TYPE_CHECKING:
 @dataclasses.dataclass
 class ImageInfo:
     count_cmd_id: int
+    count_cmd_id_from_airplane: int = 0
     total_size: int = 0
     total_packets: int = 0
     # dict[packet index , tuple(packet checksum, packet data)]
@@ -99,6 +101,7 @@ class ImageReceiver:
     # 总超时时间（秒），超过此时间强制结束（丢包情况下约5秒）
     TOTAL_TIMEOUT: float = 6.0
     # 接收完成的图片表
+    # count_cmd_id_from_airplane ImageInfo
     received_image_cache: dict[int, ImageInfo]
 
     def __init__(self, airplane: AirplaneController):
@@ -128,18 +131,20 @@ class ImageReceiver:
             origin_data: bytearray,
     ):
         """接收到无人机拍照回传的图片信息包，包含图片的总大小和数据包数量等信息"""
+        print(f"on_receive_image_pack_info: fly_id={_fly_id}, photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, data_type={data_type}")
         if data_type != 0:
             # skip none-image data
             return
         total_packets = (total_size + 25) // 26  # 每包26字节，向上取整
-        if self.image_instance is None:
-            # clean it
-            self._clean_remote_image()
-            return
-        if self.image_instance.count_cmd_id != photo_count_cmd_id:
-            # clean it
-            self._clean_remote_image()
-            return
+        self.image_instance.count_cmd_id_from_airplane = photo_count_cmd_id
+        # if self.image_instance is None:
+        #     # clean it
+        #     self._clean_remote_image()
+        #     return
+        # if self.image_instance.count_cmd_id != photo_count_cmd_id:
+        #     # clean it
+        #     self._clean_remote_image()
+        #     return
         self.image_instance.total_size = total_size
         self.image_instance.total_packets = total_packets
         # 重置传输开始时间（用于总超时计算）
@@ -260,10 +265,10 @@ class ImageReceiver:
         self.image_instance.image_data = bytes(image_data[:self.image_instance.total_size])
 
         # 存储到已接收图片缓存
-        self.received_image_cache[self.image_instance.count_cmd_id] = self.image_instance
+        self.received_image_cache[self.image_instance.count_cmd_id_from_airplane] = self.image_instance
 
         print(f"Image assembled successfully! Size: {len(self.image_instance.image_data)} bytes, "
-              f"count_cmd_id: {self.image_instance.count_cmd_id}")
+              f"count_cmd_id: {self.image_instance.count_cmd_id_from_airplane}")
 
     def _start_timeout_timer(self):
         """启动或重置超时检测定时器"""
@@ -361,7 +366,7 @@ class ImageReceiver:
             # bad state , never go there
             print("Warning: No order_count , image_instance in bad state")
             pass
-        order_count = self.image_instance.count_cmd_id if self.image_instance else 0
+        order_count = self.image_instance.count_cmd_id_from_airplane if self.image_instance else 0
         cmd = bytearray([0xBB, 0X08, 0x0A, 0x00])
         cmd.extend(pack("<H", order_count))  # Int16LE (count)
         cmd.extend(pack("<I", pack_id))  # UInt32LE (pack_id)
