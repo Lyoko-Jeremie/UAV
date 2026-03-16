@@ -122,6 +122,11 @@ class ImageInfo:
     timeout_triggered_retransmit_count: int = 0
     # EOF触发的重传次数
     eof_triggered_retransmit_count: int = 0
+    # ========== 重发取消相关字段 ==========
+    # 当前待取消重发的命令ID（用于cleanSendRetry）
+    pending_transfer_cmd_id: typing.Optional[int] = None
+    # 期望收到的第一个包的ID（收到后取消重发）
+    expected_first_packet: typing.Optional[int] = None
 
 
 class ImageReceiver:
@@ -142,6 +147,8 @@ class ImageReceiver:
     received_image_cache: dict[int, ImageInfo]
     # 临界区锁，保护 image_instance 和相关状态
     _lock: threading.RLock
+    # 命令ID计数器，用于生成唯一的 cmd_id_for_clean
+    _cmd_id_counter: int
 
     def __init__(self, airplane: AirplaneController):
         self.received_image_cache = {}
@@ -149,6 +156,12 @@ class ImageReceiver:
         self._timeout_timer = None
         self.image_instance = None
         self._lock = threading.RLock()
+        self._cmd_id_counter = 0
+
+    def _generate_cmd_id(self) -> int:
+        """生成唯一的命令ID用于 cleanSendRetry（调用时已持有锁）"""
+        self._cmd_id_counter += 1
+        return self._cmd_id_counter
 
     def _check_sum1(self, data: bytearray):
         """
@@ -226,6 +239,18 @@ class ImageReceiver:
 
             # 统计：总收到包数量+1
             self.image_instance.total_received_count += 1
+
+            # 检查是否需要取消重发（收到期望的第一个包时取消）
+            if (self.image_instance.pending_transfer_cmd_id is not None and
+                    self.image_instance.expected_first_packet is not None and
+                    packet_id == self.image_instance.expected_first_packet):
+                cc = self.airplane.s.ss
+                cc.cleanSendRetry(self.image_instance.pending_transfer_cmd_id)
+                print(f"cleanSendRetry called for cmd_id={self.image_instance.pending_transfer_cmd_id}, "
+                      f"expected_first_packet={self.image_instance.expected_first_packet}")
+                # 清除待取消的命令ID
+                self.image_instance.pending_transfer_cmd_id = None
+                self.image_instance.expected_first_packet = None
 
             print(f"on_receive_image_packet_data: size_len={size_len}, packet_id={packet_id}, "
                   f"total_packets={self.image_instance.total_packets}, cache_size={len(self.image_instance.packet_cache)}, "
@@ -526,19 +551,31 @@ class ImageReceiver:
         self.image_instance = None
 
     def _send_start_received(self):
-        """发送开始传输指令"""
+        """发送开始传输指令（调用时已持有锁）"""
         cc = self.airplane.s.ss
         (order_count, cmd) = self._send_transfer_pack(0x00_00_00_00)
         print("_start_time_received", order_count, cmd.hex(' '))
-        cc.sendCommand(cmd, 5)
+        # 生成唯一的命令ID用于取消重发
+        cmd_id = self._generate_cmd_id()
+        # 记录待取消的命令ID和期望收到的第一个包（第0包）
+        if self.image_instance is not None:
+            self.image_instance.pending_transfer_cmd_id = cmd_id
+            self.image_instance.expected_first_packet = 0
+        cc.sendCommand(cmd, max_retry=3, cmd_id_for_clean=cmd_id)
         pass
 
     def _re_transfer_pack(self, pack_id: int):
-        """发送从指定包开始重传的指令"""
+        """发送从指定包开始重传的指令（调用时已持有锁）"""
         cc = self.airplane.s.ss
         (order_count, cmd) = self._send_transfer_pack(pack_id)
         print("_re_transfer_pack", order_count, cmd.hex(' '))
-        cc.sendCommand(cmd, 5)
+        # 生成唯一的命令ID用于取消重发
+        cmd_id = self._generate_cmd_id()
+        # 记录待取消的命令ID和期望收到的第一个包（即请求重传的pack_id）
+        if self.image_instance is not None:
+            self.image_instance.pending_transfer_cmd_id = cmd_id
+            self.image_instance.expected_first_packet = pack_id
+        cc.sendCommand(cmd, max_retry=15, cmd_id_for_clean=cmd_id)
         pass
 
     def _clean_remote_image(self):
@@ -546,7 +583,7 @@ class ImageReceiver:
         cc = self.airplane.s.ss
         (order_count, cmd) = self._send_transfer_pack(0xFF_FF_FF_FF)
         print("_clean_remote_image", order_count, cmd.hex(' '))
-        cc.sendCommand(cmd, 20)
+        cc.sendCommand(cmd, max_retry=3)
         pass
 
     def _send_transfer_pack(self, pack_id: int):
