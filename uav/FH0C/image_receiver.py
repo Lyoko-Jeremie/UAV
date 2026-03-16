@@ -79,6 +79,17 @@ if typing.TYPE_CHECKING:
 #                                ↓
 #                            _clean_remote_image() → 通知无人机清除缓存
 
+# send_cap_image() → 发送拍照指令，创建 ImageInfo
+#     ↓
+# on_receive_image_pack_info() → 收到图片信息，发送开始传输指令
+#     ↓
+# on_receive_image_packet_data() → 接收数据包，更新缓存
+#     ↓
+# on_receive_image_packet_data_eof() → EOF 信号
+#     ├─ 有丢包 → _re_transfer_pack(first_missing) → 继续等待
+#     └─ 无丢包 → _assemble_image() → _when_received_end()
+#                                         └→ _clean_remote_image() 清除远端缓存
+
 @dataclasses.dataclass
 class ImageInfo:
     count_cmd_id: int
@@ -116,12 +127,15 @@ class ImageReceiver:
     # 接收完成的图片表
     # count_cmd_id_from_airplane ImageInfo
     received_image_cache: dict[int, ImageInfo]
+    # 临界区锁，保护 image_instance 和相关状态
+    _lock: threading.RLock
 
     def __init__(self, airplane: AirplaneController):
         self.received_image_cache = {}
         self.airplane = airplane
         self._timeout_timer = None
         self.image_instance = None
+        self._lock = threading.RLock()
 
     def _check_sum1(self, data: bytearray):
         """
@@ -149,26 +163,24 @@ class ImageReceiver:
         if data_type != 0:
             # skip none-image data
             return
-        total_packets = (total_size + 25) // 26  # 每包26字节，向上取整
-        self.image_instance.count_cmd_id_from_airplane = photo_count_cmd_id
-        # if self.image_instance is None:
-        #     # clean it
-        #     self._clean_remote_image()
-        #     return
-        # if self.image_instance.count_cmd_id != photo_count_cmd_id:
-        #     # clean it
-        #     self._clean_remote_image()
-        #     return
-        self.image_instance.total_size = total_size
-        self.image_instance.total_packets = total_packets
-        # 重置传输开始时间（用于总超时计算）
-        self.image_instance.start_time = time.time()
-        # 发送开始传输指令
-        self._send_start_received()
-        # 启动超时检测定时器，防止第一个数据包丢失或无人机无响应
-        self._start_timeout_timer()
-        print(
-            f"Received image info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
+        
+        with self._lock:
+            if self.image_instance is None:
+                # 没有正在等待的图片传输请求
+                return
+            
+            total_packets = (total_size + 25) // 26  # 每包26字节，向上取整
+            self.image_instance.count_cmd_id_from_airplane = photo_count_cmd_id
+            self.image_instance.total_size = total_size
+            self.image_instance.total_packets = total_packets
+            # 重置传输开始时间（用于总超时计算）
+            self.image_instance.start_time = time.time()
+            # 发送开始传输指令
+            self._send_start_received()
+            # 启动超时检测定时器，防止第一个数据包丢失或无人机无响应
+            self._start_timeout_timer()
+            print(
+                f"Received image info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
 
     def on_receive_image_packet_data(
             self,
@@ -185,112 +197,120 @@ class ImageReceiver:
         :param origin_data:
         :return:
         """
-        if self.image_instance is None:
-            # 没有正在进行的图片传输
-            return
-        if self.image_instance.total_packets == 0:
-            # 还没有收到图片信息包
-            return
-        print(
-            f"on_receive_image_packet_data: size_len={size_len}, packet_id={packet_id}, max_id={self.image_instance.total_packets}, has_pack={len(self.image_instance.packet_cache)}, buff_len={len(buff)}, origin_data_len={len(origin_data)}")
-
-        # 更新最后收到包的时间
-        self.image_instance.last_packet_time = time.time()
-
-        # 计算数据包的校验和（用于去重检测）
-        packet_checksum = sum(origin_data) & 0xFF
-
-        # 检查是否是重复包
-        if packet_id in self.image_instance.packet_cache:
-            existing_checksum, _ = self.image_instance.packet_cache[packet_id]
-            if existing_checksum == packet_checksum:
-                # 完全相同的包，忽略
+        with self._lock:
+            if self.image_instance is None:
+                # 没有正在进行的图片传输
                 return
+            if self.image_instance.total_packets == 0:
+                # 还没有收到图片信息包
+                return
+            
+            # 检查 packet_id 是否在有效范围内
+            if packet_id >= self.image_instance.total_packets:
+                print(f"Warning: Received invalid packet_id={packet_id}, max valid={self.image_instance.total_packets - 1}")
+                return
+            
+            print(
+                f"on_receive_image_packet_data: size_len={size_len}, packet_id={packet_id}, max_id={self.image_instance.total_packets}, has_pack={len(self.image_instance.packet_cache)}, buff_len={len(buff)}, origin_data_len={len(origin_data)}")
 
-        # 存储数据包
-        self.image_instance.packet_cache[packet_id] = (packet_checksum, bytes(buff))
+            # 更新最后收到包的时间
+            self.image_instance.last_packet_time = time.time()
 
-        # 更新最大已收到的包索引
-        if packet_id > self.image_instance.max_received_index:
-            self.image_instance.max_received_index = packet_id
+            # 计算数据包的校验和（用于去重检测）
+            packet_checksum = sum(origin_data) & 0xFF
 
-        # 从请求重传列表中移除已收到的包
-        self.image_instance.requested_packets.discard(packet_id)
+            # 检查是否是重复包：如果已存在相同 packet_id 的包，保留第一个收到的（不覆盖）
+            if packet_id in self.image_instance.packet_cache:
+                existing_checksum, _ = self.image_instance.packet_cache[packet_id]
+                if existing_checksum == packet_checksum:
+                    # 完全相同的包，忽略
+                    print(f"Duplicate packet {packet_id} with same checksum, ignored")
+                    return
+                else:
+                    # checksum 不同，可能是损坏的重传包，保留原有数据不覆盖
+                    print(f"Duplicate packet {packet_id} with different checksum, keeping original")
+                    return
 
-        print(f"Received packet {packet_id}/{self.image_instance.total_packets - 1}, "
-              f"cache size: {len(self.image_instance.packet_cache)}")
+            # 存储数据包
+            self.image_instance.packet_cache[packet_id] = (packet_checksum, bytes(buff))
 
-        # 检查丢包：检测是否有跳过的包
-        self._check_and_request_missing_packets(packet_id)
+            # 更新最大已收到的包索引
+            if packet_id > self.image_instance.max_received_index:
+                self.image_instance.max_received_index = packet_id
 
-        # 检查是否已接收完所有包
-        if len(self.image_instance.packet_cache) >= self.image_instance.total_packets:
-            # 验证是否真的收齐了所有包
-            if self._verify_all_packets_received():
+            # 从请求重传列表中移除已收到的包
+            self.image_instance.requested_packets.discard(packet_id)
+
+            print(f"Received packet {packet_id}/{self.image_instance.total_packets - 1}, "
+                  f"cache size: {len(self.image_instance.packet_cache)}")
+
+            # 检查丢包：检测是否有跳过的包
+            self._check_and_request_missing_packets(packet_id)
+
+            # 检查是否已接收完所有包
+            if len(self.image_instance.packet_cache) >= self.image_instance.total_packets:
+                # 验证是否真的收齐了所有包
+                if self._verify_all_packets_received():
+                    print(f"All {self.image_instance.total_packets} packets received, assembling image...")
+                    self._assemble_image()
+                    self._when_received_end()
+            else:
+                # 启动/重置超时检测定时器
+                self._start_timeout_timer()
+
+    def on_receive_image_packet_data_eof(self, size_len: int, origin_data: bytearray):
+        """
+        收到 EOF 包 [aa 03 0b ff ff b6] ，表示无人机完成了一轮数据传输
+        EOF 包仅作为结束信号，需要检查是否有丢包并请求重传
+        """
+        with self._lock:
+            if self.image_instance is None:
+                return
+            if self.image_instance.total_packets == 0:
+                # 还没有收到图片信息包
+                return
+            
+            print(f"EOF received. Current progress: {len(self.image_instance.packet_cache)}/{self.image_instance.total_packets}")
+            
+            # 更新最后收到包的时间
+            self.image_instance.last_packet_time = time.time()
+
+            # 检查是否收齐所有包
+            missing_packets = []
+            for i in range(self.image_instance.total_packets):
+                if i not in self.image_instance.packet_cache:
+                    missing_packets.append(i)
+
+            if missing_packets:
+                # 检查总超时
+                current_time = time.time()
+                if current_time - self.image_instance.start_time > self.TOTAL_TIMEOUT:
+                    print(f"EOF received but total timeout reached! Missing {len(missing_packets)} packets: {missing_packets[:10]}...")
+                    # 超时，组装已有数据（可能不完整）并结束
+                    if len(self.image_instance.packet_cache) > 0:
+                        self._assemble_image()
+                    self._when_received_end()
+                    return
+
+                # 还有丢包，请求从第一个丢失的包开始重传
+                first_missing = min(missing_packets)
+                print(f"EOF received, but missing {len(missing_packets)} packets. "
+                      f"Missing packet IDs: {missing_packets[:10]}{'...' if len(missing_packets) > 10 else ''}")
+                print(f"Requesting retransmit from packet {first_missing}")
+                self._re_transfer_pack(first_missing)
+                # 标记所有缺失的包为已请求
+                for p in missing_packets:
+                    self.image_instance.requested_packets.add(p)
+                # 重新启动超时定时器
+                self._start_timeout_timer()
+            else:
+                # 所有包已收到，组装图片并结束传输
+                print(f"EOF received, all {self.image_instance.total_packets} packets received successfully")
                 self._assemble_image()
                 self._when_received_end()
-        else:
-            # 启动/重置超时检测定时器
-            self._start_timeout_timer()
-            pass
-        pass
-
-    def on_receive_image_packet_data_eof(self):
-        """收到 EOF 包 [aa 03 0b ff ff b6] ，表示无人机完成了一轮数据传输"""
-        if self.image_instance is None:
-            return
-        if self.image_instance.total_packets == 0:
-            # 还没有收到图片信息包
-            return
-        # if not self._verify_all_packets_received():
-        #     print("EOF received but not all packets received yet!, lost pack id is:")
-        #     for i in range(self.image_instance.total_packets):
-        #         if i not in self.image_instance.packet_cache:
-        #             print(f"  - {i}")
-        #             pass
-        #         pass
-        #     pass
-        self._assemble_image()
-        self._when_received_end()
-
-        # # 更新最后收到包的时间
-        # self.image_instance.last_packet_time = time.time()
-        #
-        # # 检查是否收齐所有包
-        # missing_packets = []
-        # for i in range(self.image_instance.total_packets):
-        #     if i not in self.image_instance.packet_cache:
-        #         missing_packets.append(i)
-        #
-        # if missing_packets:
-        #     # 检查总超时
-        #     current_time = time.time()
-        #     if current_time - self.image_instance.start_time > self.TOTAL_TIMEOUT:
-        #         print(f"EOF received but total timeout reached! Missing {len(missing_packets)} packets")
-        #         # 尝试组装已有数据（可能不完整）
-        #         if len(self.image_instance.packet_cache) > 0:
-        #             self._assemble_image()
-        #         self._when_received_end()
-        #         return
-        #
-        #     # 还有丢包，请求从第一个丢失的包开始重传
-        #     first_missing = min(missing_packets)
-        #     print(f"EOF received, but missing {len(missing_packets)} packets. "
-        #           f"Requesting retransmit from packet {first_missing}")
-        #     self._re_transfer_pack(first_missing)
-        #     # 标记所有缺失的包为已请求
-        #     for p in missing_packets:
-        #         self.image_instance.requested_packets.add(p)
-        #     # 重新启动超时定时器
-        #     self._start_timeout_timer()
-        # else:
-        #     # 所有包已收到，组装图片并结束传输
-        #     print(f"EOF received, all {self.image_instance.total_packets} packets received successfully")
-        #     self._assemble_image()
-        #     self._when_received_end()
 
     def _check_and_request_missing_packets(self, current_packet_id: int):
-        """检查并请求丢失的数据包"""
+        """检查并请求丢失的数据包（调用时已持有锁）"""
         if self.image_instance is None:
             return
 
@@ -313,7 +333,7 @@ class ImageReceiver:
                 self.image_instance.requested_packets.add(p)
 
     def _verify_all_packets_received(self) -> bool:
-        """验证是否收齐了所有数据包"""
+        """验证是否收齐了所有数据包（调用时已持有锁）"""
         if self.image_instance is None:
             return False
         for i in range(self.image_instance.total_packets):
@@ -322,16 +342,31 @@ class ImageReceiver:
         return True
 
     def _assemble_image(self):
-        """将所有数据包组装成完整的图片"""
+        """将所有数据包组装成完整的图片（调用时已持有锁）"""
         if self.image_instance is None:
             return
 
-        # 按包序号顺序组装数据
+        # 按包序号顺序组装数据，对于缺失的包填充零字节以保持数据对齐
         image_data = bytearray()
+        missing_count = 0
         for i in range(self.image_instance.total_packets):
             if i in self.image_instance.packet_cache:
                 _, packet_data = self.image_instance.packet_cache[i]
                 image_data.extend(packet_data)
+            else:
+                # 缺失的包填充 26 字节的零，防止后续数据错位
+                missing_count += 1
+                # 最后一个包可能不足 26 字节，需要计算实际长度
+                if i == self.image_instance.total_packets - 1:
+                    # 最后一个包的实际长度
+                    last_packet_size = self.image_instance.total_size - (i * 26)
+                    image_data.extend(b'\x00' * last_packet_size)
+                else:
+                    image_data.extend(b'\x00' * 26)
+                print(f"Warning: Missing packet {i}, filled with zeros")
+
+        if missing_count > 0:
+            print(f"Warning: Image assembled with {missing_count} missing packets (filled with zeros)")
 
         # 裁剪到实际图片大小（最后一个包可能有多余数据）
         self.image_instance.image_data = bytes(image_data[:self.image_instance.total_size])
@@ -339,11 +374,12 @@ class ImageReceiver:
         # 存储到已接收图片缓存
         self.received_image_cache[self.image_instance.count_cmd_id_from_airplane] = self.image_instance
 
-        print(f"Image assembled successfully! Size: {len(self.image_instance.image_data)} bytes, "
-              f"count_cmd_id: {self.image_instance.count_cmd_id_from_airplane}")
+        print(f"Image assembled! Size: {len(self.image_instance.image_data)} bytes, "
+              f"count_cmd_id: {self.image_instance.count_cmd_id_from_airplane}, "
+              f"complete: {missing_count == 0}")
 
     def _start_timeout_timer(self):
-        """启动或重置超时检测定时器"""
+        """启动或重置超时检测定时器（调用时已持有锁）"""
         # 取消现有定时器
         if self._timeout_timer is not None:
             self._timeout_timer.cancel()
@@ -360,55 +396,47 @@ class ImageReceiver:
             self._timeout_timer = None
 
     def _on_packet_timeout(self):
-        """包接收超时处理"""
-        if self.image_instance is None:
-            return
+        """包接收超时处理（由定时器线程调用）"""
+        with self._lock:
+            if self.image_instance is None:
+                return
 
-        current_time = time.time()
+            current_time = time.time()
 
-        # 检查总超时
-        if current_time - self.image_instance.start_time > self.TOTAL_TIMEOUT:
-            print(
-                f"Total timeout reached! Received {len(self.image_instance.packet_cache)}/{self.image_instance.total_packets} packets")
-            # 尝试组装已有数据（可能不完整）
-            if len(self.image_instance.packet_cache) > 0:
+            # 检查总超时
+            if current_time - self.image_instance.start_time > self.TOTAL_TIMEOUT:
+                print(
+                    f"Total timeout reached! Received {len(self.image_instance.packet_cache)}/{self.image_instance.total_packets} packets")
+                # 尝试组装已有数据（可能不完整）
+                if len(self.image_instance.packet_cache) > 0:
+                    self._assemble_image()
+                self._when_received_end()
+                return
+
+            # 检查包超时 - 请求重传丢失的包
+            missing_packets = []
+            for i in range(self.image_instance.total_packets):
+                if i not in self.image_instance.packet_cache:
+                    missing_packets.append(i)
+
+            if missing_packets:
+                # 请求从第一个丢失的包开始重传
+                first_missing = min(missing_packets)
+                print(f"Packet timeout! Missing {len(missing_packets)} packets, requesting retransmit from {first_missing}")
+                self._re_transfer_pack(first_missing)
+                # 重新启动超时定时器
+                self._start_timeout_timer()
+            else:
+                # 所有包已收到
                 self._assemble_image()
-            self._when_received_end()
-            return
-
-        # 检查包超时 - 请求重传丢失的包
-        missing_packets = []
-        for i in range(self.image_instance.total_packets):
-            if i not in self.image_instance.packet_cache:
-                missing_packets.append(i)
-
-        if missing_packets:
-            # 请求从第一个丢失的包开始重传
-            first_missing = min(missing_packets)
-            print(f"Packet timeout! Missing {len(missing_packets)} packets, requesting retransmit from {first_missing}")
-            self._re_transfer_pack(first_missing)
-            # 重新启动超时定时器
-            self._start_timeout_timer()
-        else:
-            # 所有包已收到
-            self._assemble_image()
-            self._when_received_end()
+                self._when_received_end()
 
     def _when_received_end(self):
-        """当接收全部结束后，进行清理工作"""
+        """当接收全部结束后，进行清理工作（调用时已持有锁）"""
         # 停止超时定时器
         self._stop_timeout_timer()
         # 清理远端缓存
         self._clean_remote_image()
-        # if not self._verify_all_packets_received():
-        #     print("EOF received but not all packets received yet!, lost pack id is:")
-        #     for i in range(self.image_instance.total_packets):
-        #         if i not in self.image_instance.packet_cache:
-        #             print(f"  - {i}")
-        #             pass
-        #         pass
-        #     pass
-        # pass
         # 清空当前图片实例
         self.image_instance = None
 
@@ -461,26 +489,27 @@ class ImageReceiver:
         无人机拍照指令。此指令触发无人机拍照。
         :return: 拍照指令的 order_count，用于后续匹配图片数据
         """
-        # 检查是否有正在进行的传输
-        if self.image_instance is not None:
-            print("Warning: Previous image transfer still in progress")
-            return None
+        with self._lock:
+            # 检查是否有正在进行的传输
+            if self.image_instance is not None:
+                print("Warning: Previous image transfer still in progress")
+                return None
 
-        cc = self.airplane.s.ss
-        # [0x00, 0x16, _order_count(), 0x01]
-        from .CommandConstructor import CmdType
-        (params, order_count) = cc.build_cmd_params(22, 0x01)
-        cmd = cc.join_cmd(CmdType.SINGLE_CONTROL, params)
-        print("send_cap_image", order_count, cmd.hex(' '))
+            cc = self.airplane.s.ss
+            # [0x00, 0x16, _order_count(), 0x01]
+            from .CommandConstructor import CmdType
+            (params, order_count) = cc.build_cmd_params(22, 0x01)
+            cmd = cc.join_cmd(CmdType.SINGLE_CONTROL, params)
+            print("send_cap_image", order_count, cmd.hex(' '))
 
-        # 先创建 ImageInfo 实例
-        self.image_instance = ImageInfo(
-            count_cmd_id=order_count,
-        )
+            # 先创建 ImageInfo 实例
+            self.image_instance = ImageInfo(
+                count_cmd_id=order_count,
+            )
 
-        # 然后发送命令
-        cc.sendCommand(cmd)
-        return order_count
+            # 然后发送命令
+            cc.sendCommand(cmd)
+            return order_count
 
     def get_image(self, count_cmd_id: int) -> typing.Optional[bytes]:
         """
@@ -488,35 +517,39 @@ class ImageReceiver:
         :param count_cmd_id: 拍照指令的 order_count
         :return: 图片的二进制数据（JPG格式），如果不存在则返回 None
         """
-        if count_cmd_id in self.received_image_cache:
-            return self.received_image_cache[count_cmd_id].image_data
-        return None
+        with self._lock:
+            if count_cmd_id in self.received_image_cache:
+                return self.received_image_cache[count_cmd_id].image_data
+            return None
 
     def get_latest_image(self) -> typing.Optional[bytes]:
         """
         获取最新接收完成的图片数据
         :return: 图片的二进制数据（JPG格式），如果没有图片则返回 None
         """
-        if not self.received_image_cache:
-            return None
-        latest_key = max(self.received_image_cache.keys())
-        return self.received_image_cache[latest_key].image_data
+        with self._lock:
+            if not self.received_image_cache:
+                return None
+            latest_key = max(self.received_image_cache.keys())
+            return self.received_image_cache[latest_key].image_data
 
     def is_transfer_in_progress(self) -> bool:
         """
         检查是否有正在进行的图片传输
         :return: True 如果有正在进行的传输
         """
-        return self.image_instance is not None
+        with self._lock:
+            return self.image_instance is not None
 
     def get_transfer_progress(self) -> typing.Optional[tuple[int, int]]:
         """
         获取当前传输进度
         :return: (已接收包数量, 总包数量) 元组，如果没有传输则返回 None
         """
-        if self.image_instance is None:
-            return None
-        return (len(self.image_instance.packet_cache), self.image_instance.total_packets)
+        with self._lock:
+            if self.image_instance is None:
+                return None
+            return (len(self.image_instance.packet_cache), self.image_instance.total_packets)
 
     def save_image_to_file(self, count_cmd_id: int, file_path: str) -> bool:
         """
@@ -558,17 +591,19 @@ class ImageReceiver:
         清除图片缓存
         :param count_cmd_id: 如果指定则只清除该图片，否则清除所有图片
         """
-        if count_cmd_id is not None:
-            if count_cmd_id in self.received_image_cache:
-                del self.received_image_cache[count_cmd_id]
-        else:
-            self.received_image_cache.clear()
+        with self._lock:
+            if count_cmd_id is not None:
+                if count_cmd_id in self.received_image_cache:
+                    del self.received_image_cache[count_cmd_id]
+            else:
+                self.received_image_cache.clear()
 
     def cancel_current_transfer(self):
         """
         取消当前正在进行的传输
         """
-        if self.image_instance is not None:
-            self._stop_timeout_timer()
-            self._clean_remote_image()
-            self.image_instance = None
+        with self._lock:
+            if self.image_instance is not None:
+                self._stop_timeout_timer()
+                self._clean_remote_image()
+                self.image_instance = None

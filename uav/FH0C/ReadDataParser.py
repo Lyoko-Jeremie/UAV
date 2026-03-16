@@ -378,7 +378,7 @@ class ReadDataParser:
             elif header == Header_ImageReceiver_ImagePackData_EOF:
                 data = self.read_buffer[0: size + 3]
                 print("Header_ImageReceiver_ImagePackData_EOF", 0, size, len(data), data.hex(' '))
-                self.image_pack_data(data, size)
+                self.image_pack_data_eof(data, size)
                 pass
             elif header == Header_Others:
                 data = self.read_buffer[0: size + 3]
@@ -541,10 +541,7 @@ class ReadDataParser:
 
     def image_pack_data_eof(self, data: bytearray, size_len: int):
         # [aa 03 0b ff ff b6]
-        params = data[2:len(data) - 1]
-        buff_size = size_len - 3
-        # 去除开头和结尾
-        buff = params[2: 2 + buff_size]
+        # EOF 包仅作为结束信号，不包含实际图片数据
         self.image_receiver.on_receive_image_packet_data_eof(
             size_len=size_len,
             origin_data=data,
