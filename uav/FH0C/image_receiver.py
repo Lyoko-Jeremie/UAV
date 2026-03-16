@@ -216,23 +216,22 @@ class ImageReceiver:
             # 更新最后收到包的时间
             self.image_instance.last_packet_time = time.time()
 
-            # 计算数据包的校验和（用于去重检测）
-            packet_checksum = sum(origin_data) & 0xFF
-
-            # 检查是否是重复包：如果已存在相同 packet_id 的包，保留第一个收到的（不覆盖）
+            # 数据包已通过 ReadDataParser 的 checksum 验证
+            # 检查是否是重复包：直接比较数据内容
             if packet_id in self.image_instance.packet_cache:
-                existing_checksum, _ = self.image_instance.packet_cache[packet_id]
-                if existing_checksum == packet_checksum:
-                    # 完全相同的包，忽略
-                    print(f"Duplicate packet {packet_id} with same checksum, ignored")
+                _, existing_data = self.image_instance.packet_cache[packet_id]
+                if existing_data == buff:
+                    # 完全相同的数据，忽略
+                    print(f"Duplicate packet {packet_id} with same data, ignored")
                     return
                 else:
-                    # checksum 不同，可能是损坏的重传包，保留原有数据不覆盖
-                    print(f"Duplicate packet {packet_id} with different checksum, keeping original")
+                    # 数据不同但都通过了 checksum 验证
+                    # 保留已有数据，因为无人机循环传输时先收到的更可能是正确的
+                    print(f"Duplicate packet {packet_id} with different data! Keeping original.")
                     return
 
-            # 存储数据包
-            self.image_instance.packet_cache[packet_id] = (packet_checksum, bytes(buff))
+            # 存储数据包（不再需要保存 checksum，因为已在 ReadDataParser 验证）
+            self.image_instance.packet_cache[packet_id] = (0, bytes(buff))
 
             # 更新最大已收到的包索引
             if packet_id > self.image_instance.max_received_index:

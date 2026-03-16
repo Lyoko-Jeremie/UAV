@@ -539,9 +539,24 @@ class ReadDataParser:
         )
         pass
 
+    def _verify_checksum(self, data: bytearray) -> bool:
+        """
+        验证数据包的 checksum
+        checksum = sum(data[:-1]) & 0xFF 应该等于 data[-1]
+        """
+        if len(data) < 2:
+            return False
+        expected = sum(data[:-1]) & 0xFF
+        actual = data[-1]
+        return expected == actual
+
     def image_pack_data_eof(self, data: bytearray, size_len: int):
         # [aa 03 0b ff ff b6]
         # EOF 包仅作为结束信号，不包含实际图片数据
+        # 验证 checksum
+        if not self._verify_checksum(data):
+            print(f"image_pack_data_eof: checksum failed, discarding packet: {data.hex(' ')}")
+            return
         self.image_receiver.on_receive_image_packet_data_eof(
             size_len=size_len,
             origin_data=data,
@@ -558,6 +573,12 @@ class ReadDataParser:
         # <-- [0xAA, len 0x1D, {0x0B, units 2, buff 26}, checksum 1]
         # 其中 units 是分包的序号，从 0 开始递增，buff 是分包的数据内容
         # 注意：最后一个包 buff 可能 不足 26 字节，这时 len 会变小，buff 的长度也会变小
+        
+        # 验证 checksum - 这是关键！只有校验正确的包才应该接收
+        if not self._verify_checksum(data):
+            print(f"image_pack_data: checksum failed, discarding packet: {data.hex(' ')}")
+            return
+        
         params = data[2:len(data) - 1]
         buff_size = size_len - 3
         #
