@@ -45,11 +45,13 @@ def task_write(thead_local: ThreadLocal):
         try:
             # check if new command comes from CommandConstructor
             d = thead_local.q.get(block=False, timeout=-1)
+            print("task_write d:", (d[0], d[1].hex(' ')))
             if isinstance(d, tuple):
-                if d[0] is QueueSignal.CLEAN:
+                if d[0] == QueueSignal.CLEAN:
+                    print("if d[0] == QueueSignal.CLEAN")
                     thead_local.latest_cmd = None
                     pass
-                elif d[0] is QueueSignal.CMD and len(d[1]) > 0:
+                elif d[0] == QueueSignal.CMD and len(d[1]) > 0:
                     print("task_write Tuple:", (d[0], d[1].hex(' ')))
                     thead_local.latest_cmd = d[1]
                     thead_local.latest_cmd_send_count = 0
@@ -57,17 +59,20 @@ def task_write(thead_local: ThreadLocal):
                         thead_local.latest_cmd_send_count_limit = d[2]
                     else:
                         thead_local.latest_cmd_send_count_limit = None
-                    pass
+                    print("thead_local", thead_local)
                 pass
         except Empty:
             pass
+        except Exception as ex:
+            print("task_write exception:", ex)
         # send cmd
         # must send multi time to ensure command are sent successfully
         if thead_local.latest_cmd is not None and len(thead_local.latest_cmd) > 0:
-            # print("write:", thead_local.latest_cmd)
+            # print("write:", thead_local.latest_cmd.hex(" "))
             thead_local.s.write(thead_local.latest_cmd)
             thead_local.latest_cmd_send_count += 1
-            if (thead_local.latest_cmd_send_count_limit is not None) and thead_local.latest_cmd_send_count > thead_local.latest_cmd_send_count_limit:
+            if thead_local.latest_cmd_send_count_limit is not None and thead_local.latest_cmd_send_count > thead_local.latest_cmd_send_count_limit:
+                print("task_write: cmd send count limit reached, clean latest_cmd")
                 thead_local.latest_cmd = None
                 thead_local.latest_cmd_send_count_limit = None
                 thead_local.latest_cmd_send_count = 0

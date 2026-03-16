@@ -7,5 +7,5 @@ class QueueSignal(Enum):
     # send a command
     CMD = 1
     # clean last send command (to stop re-send logic)
-    CLEAN = 1
+    CLEAN = 2
     pass
