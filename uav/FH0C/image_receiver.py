@@ -561,7 +561,7 @@ class ImageReceiver:
         if self.image_instance is not None:
             self.image_instance.pending_transfer_cmd_id = cmd_id
             self.image_instance.expected_first_packet = 0
-        cc.sendCommand(cmd, max_retry=3, cmd_id_for_clean=cmd_id)
+        cc.sendCommand(cmd, max_retry=2, cmd_id_for_clean=cmd_id)
         pass
 
     def _re_transfer_pack(self, pack_id: int):
@@ -575,7 +575,7 @@ class ImageReceiver:
         if self.image_instance is not None:
             self.image_instance.pending_transfer_cmd_id = cmd_id
             self.image_instance.expected_first_packet = pack_id
-        cc.sendCommand(cmd, max_retry=15, cmd_id_for_clean=cmd_id)
+        cc.sendCommand(cmd, max_retry=2, cmd_id_for_clean=cmd_id)
         pass
 
     def _clean_remote_image(self):
