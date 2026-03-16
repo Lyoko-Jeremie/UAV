@@ -101,14 +101,27 @@ class ImageInfo:
     packet_cache: dict[int, tuple[int, bytes]] = dataclasses.field(default_factory=dict)
     # jpg formatted image data
     image_data: bytes = b""
-    # 已请求重传的块索引，避免短时间内重复请求
-    requested_packets: typing.Set[int] = dataclasses.field(default_factory=set)
-    # 最大已收到的块索引，用于乱序检测
-    max_received_index: int = -1
+    # ========== 滑动窗口相关字段 ==========
+    # 上次发送重传请求时的 first_missing_packet 值，用于冷却控制
+    # -1 表示尚未发送过重传请求
+    last_retransmit_at_packet: int = -1
     # 最后收到块的时间，用于超时检测
     last_packet_time: float = dataclasses.field(default_factory=time.time)
     # 传输开始时间，用于总超时检测
     start_time: float = dataclasses.field(default_factory=time.time)
+    # ========== 统计信息字段 ==========
+    # 总共收到的包数量（包括重复包）
+    total_received_count: int = 0
+    # 重复包数量
+    duplicate_count: int = 0
+    # 重传请求次数
+    retransmit_request_count: int = 0
+    # 滑动窗口触发的重传次数
+    window_triggered_retransmit_count: int = 0
+    # 超时触发的重传次数
+    timeout_triggered_retransmit_count: int = 0
+    # EOF触发的重传次数
+    eof_triggered_retransmit_count: int = 0
 
 
 class ImageReceiver:
@@ -117,11 +130,11 @@ class ImageReceiver:
     image_instance: ImageInfo | None = None
     # 超时检测定时器
     _timeout_timer: typing.Optional[threading.Timer]
-    # 包超时时间（秒）- 增大超时时间，允许重传周期内的重复包接收完成
+    # ========== 滑动窗口配置 ==========
+    # 滑动窗口大小：当收到的包编号超过第一个缺失包+窗口大小时触发重传
+    SLIDING_WINDOW_SIZE: int = 50
+    # 包超时时间（秒）- 作为滑动窗口的后备机制，主要处理末尾包场景
     PACKET_TIMEOUT: float = 1.0
-    # 乱序容忍阈值：收到的包索引比期望索引大于此值时才认为丢包
-    # 增大阈值，减少不必要的中途重传（重传会导致大量重复包，反而降低效率）
-    OUT_OF_ORDER_THRESHOLD: int = 20
     # 总超时时间（秒），超过此时间强制结束
     TOTAL_TIMEOUT: float = 10.0
     # 接收完成的图片表
@@ -211,54 +224,50 @@ class ImageReceiver:
                     f"Warning: Received invalid packet_id={packet_id}, max valid={self.image_instance.total_packets - 1}")
                 return
 
+            # 统计：总收到包数量+1
+            self.image_instance.total_received_count += 1
+
             print(f"on_receive_image_packet_data: size_len={size_len}, packet_id={packet_id}, "
-                  f"max_id={self.image_instance.total_packets}, has_pack={len(self.image_instance.packet_cache)}, "
-                  f"buff_len={len(buff)}, origin_data_len={len(origin_data)}")
+                  f"total_packets={self.image_instance.total_packets}, cache_size={len(self.image_instance.packet_cache)}, "
+                  f"buff_len={len(buff)}")
 
             # 更新最后收到包的时间
             self.image_instance.last_packet_time = time.time()
 
             # 数据包已通过 ReadDataParser 的 checksum 验证
-            # 检查是否是重复包：直接比较数据内容
+            # 检查是否是重复包
             if packet_id in self.image_instance.packet_cache:
+                # 统计：重复包数量+1
+                self.image_instance.duplicate_count += 1
                 _, existing_data = self.image_instance.packet_cache[packet_id]
                 if existing_data == buff:
-                    # 完全相同的数据，忽略
-                    print(f"Duplicate packet {packet_id} with same data, ignored")
+                    print(f"Duplicate packet {packet_id} with same data, ignored (dup_count={self.image_instance.duplicate_count})")
                 else:
-                    # 数据不同但都通过了 checksum 验证
-                    # 保留已有数据，因为无人机循环传输时先收到的更可能是正确的
                     print(f"Duplicate packet {packet_id} with different data! Keeping original.")
                 # 重复包也要重置定时器，因为数据流仍在正常传输
-                # 这是关键修复：防止在接收重复包期间定时器超时触发错误的重传
                 self._start_timeout_timer()
                 return
 
-            # 存储数据包（不再需要保存 checksum，因为已在 ReadDataParser 验证）
+            # 存储数据包
             self.image_instance.packet_cache[packet_id] = (0, bytes(buff))
 
-            # 更新最大已收到的包索引
-            if packet_id > self.image_instance.max_received_index:
-                self.image_instance.max_received_index = packet_id
-
-            # 从请求重传列表中移除已收到的包
-            self.image_instance.requested_packets.discard(packet_id)
-
             print(f"Received packet {packet_id}/{self.image_instance.total_packets - 1}, "
-                  f"cache size: {len(self.image_instance.packet_cache)}")
+                  f"cache size: {len(self.image_instance.packet_cache)}, "
+                  f"stats: recv={self.image_instance.total_received_count}, dup={self.image_instance.duplicate_count}")
 
-            # 检查丢包：检测是否有跳过的包
-            self._check_and_request_missing_packets(packet_id)
+            # 使用滑动窗口检测丢包
+            self._check_and_request_missing_packets_sliding_window(packet_id)
 
             # 检查是否已接收完所有包
             if len(self.image_instance.packet_cache) >= self.image_instance.total_packets:
                 # 验证是否真的收齐了所有包
                 if self._verify_all_packets_received():
                     print(f"All {self.image_instance.total_packets} packets received, assembling image...")
+                    self._print_transfer_stats()
                     self._assemble_image()
                     self._when_received_end()
             else:
-                # 启动/重置超时检测定时器
+                # 启动/重置超时检测定时器（后备机制）
                 self._start_timeout_timer()
 
     def on_receive_image_packet_data_eof(self, size_len: int, origin_data: bytearray):
@@ -273,69 +282,99 @@ class ImageReceiver:
                 # 还没有收到图片信息包
                 return
 
-            print(f"EOF received. Current progress: "
-                  f"{len(self.image_instance.packet_cache)}/{self.image_instance.total_packets}")
+            first_missing = self._calculate_first_missing_packet()
+            print(f"EOF received. Progress: {len(self.image_instance.packet_cache)}/{self.image_instance.total_packets}, "
+                  f"first_missing={first_missing}")
 
             # 更新最后收到包的时间
             self.image_instance.last_packet_time = time.time()
 
             # 检查是否收齐所有包
-            missing_packets = []
-            for i in range(self.image_instance.total_packets):
-                if i not in self.image_instance.packet_cache:
-                    missing_packets.append(i)
-
-            if missing_packets:
-                # 检查总超时
-                current_time = time.time()
-                if current_time - self.image_instance.start_time > self.TOTAL_TIMEOUT:
-                    print(f"EOF received but total timeout reached! "
-                          f"Missing {len(missing_packets)} packets: {missing_packets[:10]}...")
-                    # 超时，组装已有数据（可能不完整）并结束
-                    if len(self.image_instance.packet_cache) > 0:
-                        self._assemble_image()
-                    self._when_received_end()
-                    return
-
-                # 还有丢包，请求从第一个丢失的包开始重传
-                first_missing = min(missing_packets)
-                print(f"EOF received, but missing {len(missing_packets)} packets. "
-                      f"Missing packet IDs: {missing_packets[:10]}{'...' if len(missing_packets) > 10 else ''}")
-                print(f"Requesting retransmit from packet {first_missing}")
-                self._re_transfer_pack(first_missing)
-                # 标记所有缺失的包为已请求
-                for p in missing_packets:
-                    self.image_instance.requested_packets.add(p)
-                # 重新启动超时定时器
-                self._start_timeout_timer()
-            else:
+            if first_missing >= self.image_instance.total_packets:
                 # 所有包已收到，组装图片并结束传输
                 print(f"EOF received, all {self.image_instance.total_packets} packets received successfully")
+                self._print_transfer_stats()
                 self._assemble_image()
                 self._when_received_end()
+                return
 
-    def _check_and_request_missing_packets(self, current_packet_id: int):
-        """检查并请求丢失的数据包（调用时已持有锁）"""
+            # 还有丢包
+            # 检查总超时
+            current_time = time.time()
+            if current_time - self.image_instance.start_time > self.TOTAL_TIMEOUT:
+                print(f"EOF received but total timeout reached! first_missing={first_missing}")
+                self._print_transfer_stats()
+                # 超时，组装已有数据（可能不完整）并结束
+                if len(self.image_instance.packet_cache) > 0:
+                    self._assemble_image()
+                self._when_received_end()
+                return
+
+            # EOF 触发重传（忽略冷却限制）
+            print(f"EOF received, missing packets from {first_missing}. Requesting retransmit.")
+            self.image_instance.eof_triggered_retransmit_count += 1
+            self.image_instance.retransmit_request_count += 1
+            self._re_transfer_pack(first_missing)
+            # 更新冷却标记
+            self.image_instance.last_retransmit_at_packet = first_missing
+            # 重新启动超时定时器
+            self._start_timeout_timer()
+
+    def _calculate_first_missing_packet(self) -> int:
+        """
+        计算从0开始第一个未收到的包索引（调用时已持有锁）
+        返回值：第一个缺失包的索引，如果全部收齐则返回 total_packets
+        """
+        if self.image_instance is None:
+            return 0
+        for i in range(self.image_instance.total_packets):
+            if i not in self.image_instance.packet_cache:
+                return i
+        return self.image_instance.total_packets
+
+    def _check_and_request_missing_packets_sliding_window(self, current_packet_id: int):
+        """
+        使用滑动窗口方法检查并请求丢失的数据包（调用时已持有锁）
+        
+        滑动窗口逻辑：
+        - first_missing_packet: 从0开始第一个未收到的包（窗口起点）
+        - 当 current_packet_id >= first_missing_packet + SLIDING_WINDOW_SIZE 时触发重传
+        - 冷却机制：只有当 first_missing_packet 变化后才允许再次触发
+        """
         if self.image_instance is None:
             return
 
-        # 找出已收到的最大包索引之前缺失的包
-        missing_packets = []
-        for i in range(self.image_instance.max_received_index):
-            if i not in self.image_instance.packet_cache:
-                # 检查是否已经请求过重传且还在等待中
-                if i not in self.image_instance.requested_packets:
-                    missing_packets.append(i)
+        first_missing = self._calculate_first_missing_packet()
+        
+        # 如果没有缺失包，不需要重传
+        if first_missing >= self.image_instance.total_packets:
+            return
+        
+        # 计算窗口尾部位置
+        window_end = first_missing + self.SLIDING_WINDOW_SIZE
+        
+        # 检查是否触达窗口尾部
+        if current_packet_id >= window_end:
+            # 冷却检查：只有当窗口前移（first_missing 变化）后才允许再次触发
+            if first_missing != self.image_instance.last_retransmit_at_packet:
+                print(f"Sliding window triggered! first_missing={first_missing}, "
+                      f"current={current_packet_id}, window_end={window_end}, "
+                      f"last_retransmit_at={self.image_instance.last_retransmit_at_packet}")
+                
+                # 更新统计信息
+                self.image_instance.window_triggered_retransmit_count += 1
+                self.image_instance.retransmit_request_count += 1
+                
+                # 发送重传请求
+                self._re_transfer_pack(first_missing)
+                
+                # 更新冷却标记
+                self.image_instance.last_retransmit_at_packet = first_missing
 
-        # 如果发现丢包，且当前包索引比期望的下一个包大于阈值，请求重传
-        expected_next = len(self.image_instance.packet_cache)
-        if missing_packets and (current_packet_id - expected_next) >= self.OUT_OF_ORDER_THRESHOLD:
-            # 请求从第一个丢失的包开始重传
-            first_missing = min(missing_packets)
-            self._re_transfer_pack(first_missing)
-            # 标记所有缺失的包为已请求
-            for p in missing_packets:
-                self.image_instance.requested_packets.add(p)
+    def _check_and_request_missing_packets(self, current_packet_id: int):
+        """检查并请求丢失的数据包（调用时已持有锁）- 已弃用，保留兼容"""
+        # 已由 _check_and_request_missing_packets_sliding_window 替代
+        pass
 
     def _verify_all_packets_received(self) -> bool:
         """验证是否收齐了所有数据包（调用时已持有锁）"""
@@ -401,7 +440,12 @@ class ImageReceiver:
             self._timeout_timer = None
 
     def _on_packet_timeout(self):
-        """包接收超时处理（由定时器线程调用）"""
+        """
+        包接收超时处理（由定时器线程调用）
+        作为滑动窗口的后备机制，主要处理：
+        1. 末尾包场景（剩余包数 < 窗口大小）
+        2. 无人机无响应场景
+        """
         with self._lock:
             if self.image_instance is None:
                 return
@@ -412,30 +456,65 @@ class ImageReceiver:
             if current_time - self.image_instance.start_time > self.TOTAL_TIMEOUT:
                 print(
                     f"Total timeout reached! Received {len(self.image_instance.packet_cache)}/{self.image_instance.total_packets} packets")
+                self._print_transfer_stats()
                 # 尝试组装已有数据（可能不完整）
                 if len(self.image_instance.packet_cache) > 0:
                     self._assemble_image()
                 self._when_received_end()
                 return
 
-            # 检查包超时 - 请求重传丢失的包
-            missing_packets = []
-            for i in range(self.image_instance.total_packets):
-                if i not in self.image_instance.packet_cache:
-                    missing_packets.append(i)
+            # 计算第一个缺失包
+            first_missing = self._calculate_first_missing_packet()
 
-            if missing_packets:
-                # 请求从第一个丢失的包开始重传
-                first_missing = min(missing_packets)
-                print(f"Packet timeout! "
-                      f"Missing {len(missing_packets)} packets, requesting retransmit from {first_missing}")
+            if first_missing < self.image_instance.total_packets:
+                # 还有丢包
+                # 超时触发重传（忽略冷却限制，因为是被动触发）
+                print(f"Packet timeout! first_missing={first_missing}, "
+                      f"progress={len(self.image_instance.packet_cache)}/{self.image_instance.total_packets}, "
+                      f"requesting retransmit")
+                
+                # 更新统计信息
+                self.image_instance.timeout_triggered_retransmit_count += 1
+                self.image_instance.retransmit_request_count += 1
+                
                 self._re_transfer_pack(first_missing)
+                # 更新冷却标记
+                self.image_instance.last_retransmit_at_packet = first_missing
                 # 重新启动超时定时器
                 self._start_timeout_timer()
             else:
                 # 所有包已收到
+                print(f"Timeout check: all packets received, assembling image...")
+                self._print_transfer_stats()
                 self._assemble_image()
                 self._when_received_end()
+
+    def _print_transfer_stats(self):
+        """打印传输统计信息（调用时已持有锁）"""
+        if self.image_instance is None:
+            return
+        
+        info = self.image_instance
+        elapsed_time = time.time() - info.start_time
+        unique_packets = len(info.packet_cache)
+        
+        # 计算传输效率
+        efficiency = (unique_packets / info.total_received_count * 100) if info.total_received_count > 0 else 0
+        
+        print("=" * 60)
+        print("Transfer Statistics:")
+        print(f"  Total packets expected: {info.total_packets}")
+        print(f"  Unique packets received: {unique_packets}")
+        print(f"  Total packets received (including duplicates): {info.total_received_count}")
+        print(f"  Duplicate packets: {info.duplicate_count}")
+        print(f"  Transmission efficiency: {efficiency:.1f}%")
+        print(f"  Total retransmit requests: {info.retransmit_request_count}")
+        print(f"    - Window triggered: {info.window_triggered_retransmit_count}")
+        print(f"    - Timeout triggered: {info.timeout_triggered_retransmit_count}")
+        print(f"    - EOF triggered: {info.eof_triggered_retransmit_count}")
+        print(f"  Total transfer time: {elapsed_time:.2f}s")
+        print(f"  Effective throughput: {info.total_size / elapsed_time / 1024:.2f} KB/s" if elapsed_time > 0 else "  Effective throughput: N/A")
+        print("=" * 60)
 
     def _when_received_end(self):
         """当接收全部结束后，进行清理工作（调用时已持有锁）"""
