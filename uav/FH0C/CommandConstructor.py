@@ -73,6 +73,10 @@ class CommandConstructorCore:
         self.q_write.put((QueueSignal.CMD, data), block=True)
         pass
 
+    def cleanSendRetry(self):
+        self.q_write.put((QueueSignal.CLEAN, None), block=True)
+        pass
+
     def __init__(self, q_write: Queue):
         self.q_write = q_write
         pass
