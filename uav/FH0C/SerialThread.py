@@ -11,7 +11,8 @@ from .QueueSignal import QueueSignal
 class ThreadLocal:
     """used by thead"""
     latest_cmd: bytearray = None
-    q: Queue = None
+    # (QueueSignal, data)
+    q: Queue[tuple[QueueSignal, bytearray]] = None
     s: serial.Serial = None
     t: Thread = None
     exit_queue: Queue = Queue()
