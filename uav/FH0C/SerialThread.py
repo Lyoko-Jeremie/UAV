@@ -11,10 +11,13 @@ from .QueueSignal import QueueSignal
 class ThreadLocal:
     """used by thread"""
     latest_cmd: bytearray | None = None
+    latest_cmd_id: int | None = None
     latest_cmd_send_count = 0
     latest_cmd_send_count_limit: None | int = None
-    # (QueueSignal, data, int|None)
-    q: Queue[tuple[QueueSignal, bytearray] | tuple[QueueSignal, bytearray, int]] = None
+    # (QueueSignal, data|None, int|None,            int|None)
+    # (CMD,         bytearray, retry_limit or None, id or None)  the id means a message id, that used for CLEAN cmd
+    # (CLEAN,       None,      None,                id)          the id means a message id, that come from CMD
+    q: Queue[tuple[QueueSignal, bytearray | None, int | None, int | None]] = None
     s: serial.Serial = None
     t: Thread = None
     exit_queue: Queue = Queue()
@@ -49,9 +52,10 @@ def task_write(thead_local: ThreadLocal):
             if isinstance(d, tuple):
                 if d[0] == QueueSignal.CLEAN:
                     print("if d[0] == QueueSignal.CLEAN")
-                    thead_local.latest_cmd = None
+                    if len(d) > 3 and d[3] is not None and thead_local.latest_cmd_id == d[3]:
+                        thead_local.latest_cmd = None
                     pass
-                elif d[0] == QueueSignal.CMD and len(d[1]) > 0:
+                elif d[0] == QueueSignal.CMD and d[1] is not None and len(d[1]) > 0:
                     print("task_write Tuple:", (d[0], d[1].hex(' ')))
                     thead_local.latest_cmd = d[1]
                     thead_local.latest_cmd_send_count = 0
@@ -59,6 +63,10 @@ def task_write(thead_local: ThreadLocal):
                         thead_local.latest_cmd_send_count_limit = d[2]
                     else:
                         thead_local.latest_cmd_send_count_limit = None
+                    if len(d) > 3 and d[3] is not None:
+                        thead_local.latest_cmd_id = d[3]
+                    else:
+                        thead_local.latest_cmd_id = None
                     print("thead_local", thead_local)
                 pass
         except Empty:

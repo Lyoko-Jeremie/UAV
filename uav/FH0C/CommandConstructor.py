@@ -57,7 +57,7 @@ class CommandConstructorCore:
         return bytearray([sum(header + params) & 0xFF])
         pass
 
-    def sendCommand(self, data: bytearray, max_retry=None):
+    def sendCommand(self, data: bytearray, max_retry=None, cmd_id_for_clean=None):
         """
         The sendCommand function accepts a cmd bytearray as input and adds it to the queue of commands
         to be sent to the drone.  The function does not return any values.
@@ -65,17 +65,18 @@ class CommandConstructorCore:
         :param self: Access the class attributes
         :param data:bytearray: Send the command to the device
         :param max_retry: Maximum retry time
+        :param cmd_id_for_clean: Command ID for clean
         :return: The number of bytes written to the serial port
         :doc-author: Jeremie
         """
         """
         direct do the command bytearray send task
         """
-        self.q_write.put((QueueSignal.CMD, data, max_retry), block=True)
+        self.q_write.put((QueueSignal.CMD, data, max_retry, cmd_id_for_clean), block=True)
         pass
 
-    def cleanSendRetry(self):
-        self.q_write.put((QueueSignal.CLEAN, None), block=True)
+    def cleanSendRetry(self, cmd_id_for_clean):
+        self.q_write.put((QueueSignal.CLEAN, None, None, cmd_id_for_clean), block=True)
         pass
 
     def __init__(self, q_write: Queue):
