@@ -130,7 +130,7 @@ class ImageReceiver:
         self.image_instance.total_packets = total_packets
         # 启动超时检测定时器
         # TODO
-        self._start_time_received()
+        self._send_start_received()
         print(
             f"Received image info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
         pass
@@ -142,6 +142,14 @@ class ImageReceiver:
             buff: bytes,
             origin_data: bytearray,
     ):
+        """
+        接收到实际的图片数据包
+        :param size_len: header中的第二个字段 len 的值，正常情况下为 0x1D ，由于最后一个包可能不足26字节，实际数据长度需要根据 size_len 和 buff 计算得出
+        :param packet_id:
+        :param buff:
+        :param origin_data:
+        :return:
+        """
         if self.image_instance is None:
             # TODO clean it
             return
@@ -149,12 +157,14 @@ class ImageReceiver:
         pass
 
     def _when_received_end(self):
+        """当接收全部结束后，进行清理工作"""
         self._clean_remote_image()
         # TODO clean
         self.image_instance = None
         pass
 
-    def _start_time_received(self):
+    def _send_start_received(self):
+        """发送开始传输指令"""
         cc = self.airplane.s.ss
         (order_count, cmd) = self._send_transfer_pack(0x00_00_00_00)
         print("_start_time_received", order_count, cmd.hex(' '))
@@ -162,6 +172,7 @@ class ImageReceiver:
         pass
 
     def _re_transfer_pack(self, pack_id: int):
+        """发送从指定包开始重传的指令"""
         cc = self.airplane.s.ss
         (order_count, cmd) = self._send_transfer_pack(pack_id)
         print("_re_transfer_pack", order_count, cmd.hex(' '))
@@ -169,6 +180,7 @@ class ImageReceiver:
         pass
 
     def _clean_remote_image(self):
+        """在传输结束，全部接收完毕后，发送指令清除远端数据"""
         cc = self.airplane.s.ss
         (order_count, cmd) = self._send_transfer_pack(0xFF_FF_FF_FF)
         print("_clean_remote_image", order_count, cmd.hex(' '))
@@ -197,9 +209,11 @@ class ImageReceiver:
 
     def send_cap_image(self):
         """
-        无人机拍照指令。此指令触发无人机拍照。后续的传输和接收逻辑在 ImageReceiver 中实现。
+        无人机拍照指令。此指令触发无人机拍照。
         :return:
         """
+        if self.image_instance is None:
+            return False
         cc = self.airplane.s.ss
         # [0x00, 0x16, _order_count(), 0x01]
         (params, order_count) = cc.build_cmd_params(22, 0x01)
@@ -209,4 +223,4 @@ class ImageReceiver:
         self.image_instance = ImageInfo(
             count_cmd_id=order_count,
         )
-        pass
+        return True
