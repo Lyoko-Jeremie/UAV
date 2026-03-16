@@ -21,6 +21,7 @@ Header_Fh0cBase = b'\xAA\x1b\x01'
 
 Header_ImageReceiver_ImagePackInfo = b'\xAA\x0A\x0A'
 Header_ImageReceiver_ImagePackData = b'\xAA\x1D\x0B'
+Header_ImageReceiver_ImagePackData_EOF = b'\xAA\x03\x0B'
 
 
 # 当最后一个数据包时 , Header_ImageReceiver_ImagePackData 中的负载可能会短于26，这会导致第二个字节(len)变化，需要单独进行匹配
@@ -374,6 +375,11 @@ class ReadDataParser:
                 print("Header_ImageReceiver_ImagePackData", 0, size, len(data), data.hex(' '))
                 self.image_pack_data(data, size)
                 pass
+            elif header == Header_ImageReceiver_ImagePackData_EOF:
+                data = self.read_buffer[0: size + 3]
+                print("Header_ImageReceiver_ImagePackData_EOF", 0, size, len(data), data.hex(' '))
+                self.image_pack_data(data, size)
+                pass
             elif header == Header_Others:
                 data = self.read_buffer[0: size + 3]
                 # print("Header_Others", 0, size, len(data), data)
@@ -532,6 +538,19 @@ class ReadDataParser:
             origin_data=data,
         )
         pass
+
+    def image_pack_data_eof(self, data: bytearray, size_len: int):
+        # [aa 03 0b ff ff b6]
+        params = data[2:len(data) - 1]
+        buff_size = size_len - 3
+        # 去除开头和结尾
+        buff = params[2: 2 + buff_size]
+        self.image_receiver.on_receive_image_packet_data_eof(
+            size_len=size_len,
+            origin_data=data,
+        )
+        pass
+
 
     def image_pack_data(self, data: bytearray, size_len: int):
         # 无人机真实发送数据包的格式：

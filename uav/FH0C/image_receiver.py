@@ -216,6 +216,12 @@ class ImageReceiver:
         else:
             # 启动/重置超时检测定时器
             self._start_timeout_timer()
+            pass
+        pass
+
+    def on_receive_image_packet_data_eof(self):
+        """收到 EOF 包 [aa 03 0b ff ff b6] ，数据传输已完成"""
+
 
     def _check_and_request_missing_packets(self, current_packet_id: int):
         """检查并请求丢失的数据包"""

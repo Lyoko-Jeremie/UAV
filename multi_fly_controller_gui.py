@@ -804,6 +804,7 @@ class UAVControlPanel(ttk.Frame):
             self.image_preview.config(image=self.photo_image, text='')
             self.log_widget.log(f"图片接收完成，大小: {len(image_data)} 字节", "SUCCESS")
         except Exception as e:
+            print(e)
             self.image_preview.config(text=f"显示失败: {str(e)}")
             self.log_widget.log(f"图片显示失败: {str(e)}", "ERROR")
     
