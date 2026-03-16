@@ -1,5 +1,4 @@
 import dataclasses
-import math
 import threading
 import time
 import typing
@@ -51,7 +50,17 @@ if typing.TYPE_CHECKING:
 # 总 units 数量 = ceil(size / 26)，当 units == ceil(size / 26) - 1 时，说明是最后一个分包
 # TODO 丢包重发的逻辑：是否需要使用超时时间和数据包序号跳变来检测是否丢包？
 # ===================================================
-# 飞机
+
+
+# send_cap_image()
+#     → [等待无人机响应]
+# on_receive_image_pack_info()
+#     → 重置 start_time
+#     → _send_start_received()
+#     → _start_timeout_timer()  ← 此处启动超时定时器
+#     → [等待数据包]
+# on_receive_image_packet_data()
+#     → 每次收到包都会重置定时器
 
 
 @dataclasses.dataclass
@@ -131,12 +140,14 @@ class ImageReceiver:
             return
         self.image_instance.total_size = total_size
         self.image_instance.total_packets = total_packets
-        # 启动超时检测定时器
-        # TODO
+        # 重置传输开始时间（用于总超时计算）
+        self.image_instance.start_time = time.time()
+        # 发送开始传输指令
         self._send_start_received()
+        # 启动超时检测定时器，防止第一个数据包丢失或无人机无响应
+        self._start_timeout_timer()
         print(
             f"Received image info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
-        pass
 
     def on_receive_image_packet_data(
             self,
@@ -343,8 +354,11 @@ class ImageReceiver:
         pack_id: 0x00_00_00_00 开始传输，（开始从0循环传输）
         pack_id: 0xFF_FF_FF_FF 结束传输
         """
-        cc = self.airplane.s.ss
         # [0xBB, len 0x08, {0x0A, id 1, count 2, (0xFF_FF_FF_FF) 4}, checksum 1]
+        if self.image_instance is None:
+            # bad state , never go there
+            print("Warning: No order_count , image_instance in bad state")
+            pass
         order_count = self.image_instance.count_cmd_id if self.image_instance else 0
         cmd = bytearray([0xBB, 0X08, 0x0A, 0x00])
         cmd.extend(pack("<H", order_count))  # Int16LE (count)
