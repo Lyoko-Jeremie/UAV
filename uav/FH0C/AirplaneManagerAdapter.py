@@ -3,6 +3,7 @@
 目的是尽可能使得使用PhantasyIslandPythonRemoteControl库编写的代码可以在只修改import导入表的情况下直接调用FH0A库对应的功能
 """
 from typing import Dict, Optional
+import typing
 from time import sleep
 
 from .SerialThread import SerialThread
@@ -19,6 +20,26 @@ class AirplaneController(object):
     def __init__(self, port):
         self.image_receiver = ImageReceiver(self)
         self.s = SerialThread(port=port, airplane=self)
+        pass
+
+    def cap_image(
+            self,
+            user_receive_callback: typing.Optional[typing.Callable[[bytes], None]] = None,
+            user_progress_callback: typing.Optional[typing.Callable[[int, int], None]] = None,
+    ):
+        self.image_receiver.send_cap_image(user_receive_callback, user_progress_callback)
+        pass
+
+    def get_image_transfer_progress(self):
+        self.image_receiver.get_transfer_progress()
+        pass
+
+    def is_image_transfer_in_progress(self):
+        self.image_receiver.is_transfer_in_progress()
+        pass
+
+    def get_latest_image(self):
+        self.image_receiver.get_latest_image()
         pass
 
     def takeoff(self, high: int, ):

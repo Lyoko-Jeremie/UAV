@@ -150,6 +150,9 @@ class ImageReceiver:
     # 命令ID计数器，用于生成唯一的 cmd_id_for_clean
     _cmd_id_counter: int
 
+    user_receive_callback: typing.Callable[[bytes], None] | None = None
+    user_progress_callback: typing.Callable[[int, int], None] | None = None
+
     def __init__(self, airplane: AirplaneController):
         self.received_image_cache = {}
         self.airplane = airplane
@@ -266,7 +269,8 @@ class ImageReceiver:
                 self.image_instance.duplicate_count += 1
                 _, existing_data = self.image_instance.packet_cache[packet_id]
                 if existing_data == buff:
-                    print(f"Duplicate packet {packet_id} with same data, ignored (dup_count={self.image_instance.duplicate_count})")
+                    print(
+                        f"Duplicate packet {packet_id} with same data, ignored (dup_count={self.image_instance.duplicate_count})")
                 else:
                     print(f"Duplicate packet {packet_id} with different data! Keeping original.")
                 # 重复包也要重置定时器，因为数据流仍在正常传输
@@ -275,6 +279,9 @@ class ImageReceiver:
 
             # 存储数据包
             self.image_instance.packet_cache[packet_id] = (0, bytes(buff))
+
+            if self.user_progress_callback is not None:
+                self.user_progress_callback(len(self.image_instance.packet_cache), self.image_instance.total_packets)
 
             print(f"Received packet {packet_id}/{self.image_instance.total_packets - 1}, "
                   f"cache size: {len(self.image_instance.packet_cache)}, "
@@ -308,8 +315,9 @@ class ImageReceiver:
                 return
 
             first_missing = self._calculate_first_missing_packet()
-            print(f"EOF received. Progress: {len(self.image_instance.packet_cache)}/{self.image_instance.total_packets}, "
-                  f"first_missing={first_missing}")
+            print(
+                f"EOF received. Progress: {len(self.image_instance.packet_cache)}/{self.image_instance.total_packets}, "
+                f"first_missing={first_missing}")
 
             # 更新最后收到包的时间
             self.image_instance.last_packet_time = time.time()
@@ -370,14 +378,14 @@ class ImageReceiver:
             return
 
         first_missing = self._calculate_first_missing_packet()
-        
+
         # 如果没有缺失包，不需要重传
         if first_missing >= self.image_instance.total_packets:
             return
-        
+
         # 计算窗口尾部位置
         window_end = first_missing + self.SLIDING_WINDOW_SIZE
-        
+
         # 检查是否触达窗口尾部
         if current_packet_id >= window_end:
             # 冷却检查：只有当窗口前移（first_missing 变化）后才允许再次触发
@@ -385,14 +393,14 @@ class ImageReceiver:
                 print(f"Sliding window triggered! first_missing={first_missing}, "
                       f"current={current_packet_id}, window_end={window_end}, "
                       f"last_retransmit_at={self.image_instance.last_retransmit_at_packet}")
-                
+
                 # 更新统计信息
                 self.image_instance.window_triggered_retransmit_count += 1
                 self.image_instance.retransmit_request_count += 1
-                
+
                 # 发送重传请求
                 self._re_transfer_pack(first_missing)
-                
+
                 # 更新冷却标记
                 self.image_instance.last_retransmit_at_packet = first_missing
 
@@ -442,6 +450,11 @@ class ImageReceiver:
 
         # 存储到已接收图片缓存
         self.received_image_cache[self.image_instance.count_cmd_id_from_airplane] = self.image_instance
+
+        if self.user_progress_callback is not None:
+            self.user_progress_callback(self.image_instance.total_packets, self.image_instance.total_packets)
+        if self.user_receive_callback is not None:
+            self.user_receive_callback(self.image_instance.image_data)
 
         print(f"Image assembled! Size: {len(self.image_instance.image_data)} bytes, "
               f"count_cmd_id: {self.image_instance.count_cmd_id_from_airplane}, "
@@ -497,11 +510,11 @@ class ImageReceiver:
                 print(f"Packet timeout! first_missing={first_missing}, "
                       f"progress={len(self.image_instance.packet_cache)}/{self.image_instance.total_packets}, "
                       f"requesting retransmit")
-                
+
                 # 更新统计信息
                 self.image_instance.timeout_triggered_retransmit_count += 1
                 self.image_instance.retransmit_request_count += 1
-                
+
                 self._re_transfer_pack(first_missing)
                 # 更新冷却标记
                 self.image_instance.last_retransmit_at_packet = first_missing
@@ -518,14 +531,14 @@ class ImageReceiver:
         """打印传输统计信息（调用时已持有锁）"""
         if self.image_instance is None:
             return
-        
+
         info = self.image_instance
         elapsed_time = time.time() - info.start_time
         unique_packets = len(info.packet_cache)
-        
+
         # 计算传输效率
         efficiency = (unique_packets / info.total_received_count * 100) if info.total_received_count > 0 else 0
-        
+
         print("=" * 60)
         print("Transfer Statistics:")
         print(f"  Total packets expected: {info.total_packets}")
@@ -538,7 +551,8 @@ class ImageReceiver:
         print(f"    - Timeout triggered: {info.timeout_triggered_retransmit_count}")
         print(f"    - EOF triggered: {info.eof_triggered_retransmit_count}")
         print(f"  Total transfer time: {elapsed_time:.2f}s")
-        print(f"  Effective throughput: {info.total_size / elapsed_time / 1024:.2f} KB/s" if elapsed_time > 0 else "  Effective throughput: N/A")
+        print(
+            f"  Effective throughput: {info.total_size / elapsed_time / 1024:.2f} KB/s" if elapsed_time > 0 else "  Effective throughput: N/A")
         print("=" * 60)
 
     def _when_received_end(self):
@@ -606,11 +620,16 @@ class ImageReceiver:
         cmd = cmd + checksum
         return (order_count, cmd)
 
-    def send_cap_image(self):
+    def send_cap_image(self,
+                       user_receive_callback: typing.Optional[typing.Callable[[bytes], None]] = None,
+                       user_progress_callback: typing.Optional[typing.Callable[[int, int], None]] = None,
+                       ) -> typing.Optional[int]:
         """
         无人机拍照指令。此指令触发无人机拍照。
         :return: 拍照指令的 order_count，用于后续匹配图片数据
         """
+        self.user_receive_callback = user_receive_callback
+        self.user_progress_callback = user_progress_callback
         with self._lock:
             # 检查是否有正在进行的传输
             if self.image_instance is not None:
