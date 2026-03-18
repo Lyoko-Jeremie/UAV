@@ -139,9 +139,9 @@ class ImageReceiver:
     # 滑动窗口大小：当收到的包编号超过第一个缺失包+窗口大小时触发重传
     SLIDING_WINDOW_SIZE: int = 50
     # 包超时时间（秒）- 作为滑动窗口的后备机制，主要处理末尾包场景
-    PACKET_TIMEOUT: float = 1.0
+    PACKET_TIMEOUT: float = 3.0
     # 总超时时间（秒），超过此时间强制结束
-    TOTAL_TIMEOUT: float = 10.0
+    TOTAL_TIMEOUT: float = 15.0
     # 接收完成的图片表
     # count_cmd_id_from_airplane ImageInfo
     received_image_cache: dict[int, ImageInfo]
