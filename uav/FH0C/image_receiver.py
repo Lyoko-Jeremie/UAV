@@ -427,42 +427,39 @@ class ImageReceiver:
         if self.image_instance is None:
             return
 
-        # 按包序号顺序组装数据，对于缺失的包填充零字节以保持数据对齐
         image_data = bytearray()
         missing_count = 0
+
         for i in range(self.image_instance.total_packets):
             if i in self.image_instance.packet_cache:
                 _, packet_data = self.image_instance.packet_cache[i]
                 image_data.extend(packet_data)
             else:
-                # 缺失的包填充 26 字节的零，防止后续数据错位
                 missing_count += 1
-                # 最后一个包可能不足 26 字节，需要计算实际长度
-                if i == self.image_instance.total_packets - 1:
-                    # 最后一个包的实际长度
-                    last_packet_size = self.image_instance.total_size - (i * 26)
-                    image_data.extend(b'\x00' * last_packet_size)
-                else:
-                    image_data.extend(b'\x00' * 26)
-                print(f"Warning: Missing packet {i}, filled with zeros")
+                packet_size = (
+                    self.image_instance.total_size - (i * 26)
+                    if i == self.image_instance.total_packets - 1
+                    else 26
+                )
+                image_data.extend(b"\x00" * packet_size)
+                print(f"[WARNING] Missing packet {i}, filled with zeros.")
 
         if missing_count > 0:
-            print(f"Warning: Image assembled with {missing_count} missing packets (filled with zeros)")
+            print(f"[WARNING] Image assembled with {missing_count} missing packets (filled with zeros).")
 
-        # 裁剪到实际图片大小（最后一个包可能有多余数据）
         self.image_instance.image_data = bytes(image_data[:self.image_instance.total_size])
-
-        # 存储到已接收图片缓存
         self.received_image_cache[self.image_instance.count_cmd_id_from_airplane] = self.image_instance
 
-        if self.user_progress_callback is not None:
+        if self.user_progress_callback:
             self.user_progress_callback(self.image_instance.total_packets, self.image_instance.total_packets)
-        if self.user_receive_callback is not None:
+        if self.user_receive_callback:
             self.user_receive_callback(self.image_instance.image_data)
 
-        print(f"Image assembled! Size: {len(self.image_instance.image_data)} bytes, "
-              f"count_cmd_id: {self.image_instance.count_cmd_id_from_airplane}, "
-              f"complete: {missing_count == 0}")
+        print(
+            f"[INFO] Image assembled! Size: {len(self.image_instance.image_data)} bytes, "
+            f"count_cmd_id: {self.image_instance.count_cmd_id_from_airplane}, "
+            f"complete: {missing_count == 0}."
+        )
 
     def _start_timeout_timer(self):
         """启动或重置超时检测定时器（调用时已持有锁）"""
@@ -483,10 +480,7 @@ class ImageReceiver:
 
     def _on_packet_timeout(self):
         """
-        包接收超时处理（由定时器线程调用）
-        作为滑动窗口的后备机制，主要处理：
-        1. 末尾包场景（剩余包数 < 窗口大小）
-        2. 无人机无响应场景
+        Enhanced timeout handling with detailed logging.
         """
         with self._lock:
             if self.image_instance is None:
@@ -494,39 +488,34 @@ class ImageReceiver:
 
             current_time = time.time()
 
-            # 检查总超时
+            # Check total timeout
             if current_time - self.image_instance.start_time > self.TOTAL_TIMEOUT:
                 print(
-                    f"Total timeout reached! Received {len(self.image_instance.packet_cache)}/{self.image_instance.total_packets} packets")
+                    f"[ERROR] Total timeout reached! Received {len(self.image_instance.packet_cache)}/"
+                    f"{self.image_instance.total_packets} packets. Aborting transfer."
+                )
                 self._print_transfer_stats()
-                # 尝试组装已有数据（可能不完整）
                 if len(self.image_instance.packet_cache) > 0:
                     self._assemble_image()
                 self._when_received_end()
                 return
 
-            # 计算第一个缺失包
+            # Calculate first missing packet
             first_missing = self._calculate_first_missing_packet()
 
             if first_missing < self.image_instance.total_packets:
-                # 还有丢包
-                # 超时触发重传（忽略冷却限制，因为是被动触发）
-                print(f"Packet timeout! first_missing={first_missing}, "
-                      f"progress={len(self.image_instance.packet_cache)}/{self.image_instance.total_packets}, "
-                      f"requesting retransmit")
-
-                # 更新统计信息
+                print(
+                    f"[WARNING] Packet timeout! first_missing={first_missing}, "
+                    f"progress={len(self.image_instance.packet_cache)}/"
+                    f"{self.image_instance.total_packets}. Requesting retransmit."
+                )
                 self.image_instance.timeout_triggered_retransmit_count += 1
                 self.image_instance.retransmit_request_count += 1
-
                 self._re_transfer_pack(first_missing)
-                # 更新冷却标记
                 self.image_instance.last_retransmit_at_packet = first_missing
-                # 重新启动超时定时器
                 self._start_timeout_timer()
             else:
-                # 所有包已收到
-                print(f"Timeout check: all packets received, assembling image...")
+                print("[INFO] Timeout check: all packets received. Assembling image...")
                 self._print_transfer_stats()
                 self._assemble_image()
                 self._when_received_end()
@@ -705,9 +694,15 @@ class ImageReceiver:
         """
         image_data = self.get_image(count_cmd_id)
         if image_data is None:
+            print(f"[ERROR] No image data found for count_cmd_id={count_cmd_id}.")
             return False
-        write_mat_2_file(image_data, file_path)
-        return True
+        try:
+            write_mat_2_file(image_data, file_path)
+            print(f"[INFO] Image saved successfully to {file_path}.")
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to save image to {file_path}: {e}")
+            return False
 
     def save_latest_image_to_file(self, file_path: str) -> bool:
         """
@@ -717,13 +712,15 @@ class ImageReceiver:
         """
         image_data = self.get_latest_image()
         if image_data is None:
+            print("[ERROR] No latest image data available.")
             return False
         try:
             with open(file_path, 'wb') as f:
                 f.write(image_data)
+            print(f"[INFO] Latest image saved successfully to {file_path}.")
             return True
         except IOError as e:
-            print(f"Failed to save image: {e}")
+            print(f"[ERROR] Failed to save latest image to {file_path}: {e}")
             return False
 
     def clear_image_cache(self, count_cmd_id: typing.Optional[int] = None):
