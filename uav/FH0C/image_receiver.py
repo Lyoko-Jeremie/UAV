@@ -131,6 +131,12 @@ class ImageInfo:
     pending_transfer_cmd_id: typing.Optional[int] = None
     # 期望收到的第一个包的ID（收到后取消重发）
     expected_first_packet: typing.Optional[int] = None
+    # ========== 智能重发窗口状态机字段 ==========
+    # 当前活跃的重发窗口列表 [(start, end, window_size), ...]
+    # 由 smart_retransmission() 写入，由 _advance_retransmit_window_if_needed() 驱动推进
+    _retransmit_windows: list = dataclasses.field(default_factory=list)
+    # 当前正在处理的窗口索引
+    _retransmit_window_idx: int = 0
 
 
 # =============================================
@@ -410,6 +416,8 @@ class ImageReceiver:
             else:
                 # 启动/重置超时检测定时器（后备机制）
                 self._start_timeout_timer()
+                # 事件驱动推进重发窗口（实现算法第5条"立即切换到下一区间"的语义）
+                self._advance_retransmit_window_if_needed(packet_id)
 
     def on_receive_image_packet_data_eof(self, size_len: int, origin_data: bytearray):
         """
@@ -795,25 +803,120 @@ class ImageReceiver:
                 self._clean_remote_image()
                 self.image_instance = None
 
-    def smart_retransmission(self, alpha=5, W_max=32):
+    def _is_window_filled(self, start: int, end: int) -> bool:
+        """检查 [start, end] 区间内的所有包是否已全部接收（调用时已持有锁）"""
+        if self.image_instance is None:
+            return True
+        return all(pid in self.image_instance.packet_cache for pid in range(start, end + 1))
+
+    def _advance_retransmit_window_if_needed(self, packet_id: int):
         """
-        智能重发窗口主流程。可在图片接收完成检测后调用。
-        协议要求：全部传输完毕后的终止指令必须是 [0xBB, 0x08, 0x0A, id, count, 0xFF_FF_FF_FF, checksum]
+        在接收到新包后，检查当前重发窗口是否已完成，若完成则立即推进到下一个未填充窗口。
+
+        实现算法说明第5条"实时监控 cur_max_id / 立即切换到下一区间"的语义，
+        但以事件驱动方式替代原来的自旋等待，彻底避免持锁死锁。
+
+        触发条件（对应原算法第5c条）：
+          - packet_id >= window.end   （收到了窗口末尾或之后的包）
+          - 或窗口内所有包已全部收到
+
+        （调用时已持有锁）
         """
         if self.image_instance is None:
             return
+        windows = self.image_instance._retransmit_windows
+        if not windows:
+            return
+        idx = self.image_instance._retransmit_window_idx
+        if idx >= len(windows):
+            return
+
+        start, end, W = windows[idx]
+
+        # 算法第5c条：cur_max_id >= end 或窗口内包全部收到 → 切换到下一区间
+        window_done = (packet_id >= end) or self._is_window_filled(start, end)
+        if not window_done:
+            return
+
+        # 推进：跳过已填充的窗口，找到下一个真正有缺包的窗口
+        idx += 1
+        while idx < len(windows):
+            ns, ne, _ = windows[idx]
+            if not self._is_window_filled(ns, ne):
+                break
+            idx += 1  # 该窗口已被顺带填充，跳过
+
+        self.image_instance._retransmit_window_idx = idx
+
+        if idx < len(windows):
+            ns, ne, nW = windows[idx]
+            print(f"[smart_retransmission] Window [{idx - 1}] done. "
+                  f"Advancing to window [{idx}/{len(windows) - 1}]: [{ns}, {ne}] "
+                  f"(gap_size={ne - ns + 1}, W={nW})")
+            self._re_transfer_pack(ns)
+        else:
+            # 所有窗口请求均已发出，等待 on_receive_image_packet_data 检测最终收齐
+            print(f"[smart_retransmission] All {len(windows)} window(s) processed. "
+                  f"Waiting for final assembly.")
+
+    def smart_retransmission(self, alpha=5, W_max=32):
+        """
+        智能重发窗口主流程（非阻塞状态机版本）。
+
+        算法流程（对应算法说明第1-7条）：
+          1. 计算当前缺失包列表
+          2. 聚类为连续区间（窗口）
+          3. 计算每个窗口大小 W = min(L + α, W_max)
+          4. 存储窗口列表到状态机，从第一个未填充窗口开始
+          5. 发送第一个窗口的重传请求后立即返回（非阻塞！）
+             ↳ 后续窗口推进由 _advance_retransmit_window_if_needed() 在每个
+               新包到达时事件驱动执行，实现"实时监控/立即切换"语义
+          6. 若超时仍有缺包，本方法会被再次调用，重新计算窗口并从当前状态继续
+          7. 所有包收齐后由 on_receive_image_packet_data() 触发组装
+
+        原设计中的死锁根因（已修复）：
+          - 本方法在持有 self._lock 的情况下被调用
+          - 原来的 while True: time.sleep(0.05) 在持锁状态下自旋等待 packet_cache 更新
+          - on_receive_image_packet_data() 也需要 self._lock 才能写入 packet_cache
+          - 锁永远不会释放 → packet_cache 永远不变 → 自旋永不退出 → 死锁
+        """
+        if self.image_instance is None:
+            return
+
         total_packets = self.image_instance.total_packets
         received_packet_ids = set(self.image_instance.packet_cache.keys())
         controller = SmartRetransmissionController(total_packets, received_packet_ids, alpha, W_max)
         windows = controller.get_windows()
-        for start, end, window_size in windows:
-            # 发送重发指令(start)
-            self._re_transfer_pack(start)
-            # 监控收到的包ID，直到cur_max_id >= end或区间内包全部收到
-            while True:
-                cur_max_id = max([pid for pid in self.image_instance.packet_cache.keys() if pid >= start and pid <= end], default=-1)
-                if cur_max_id >= end or all(pid in self.image_instance.packet_cache for pid in range(start, end+1)):
-                    break
-                time.sleep(0.05)  # 等待新包到达
-        # 所有重发窗口补齐后，发送协议要求的终止指令（清除远端缓存）
-        self._clean_remote_image()
+
+        if not windows:
+            # 再次确认是否真的全部收齐（防御性处理）
+            if self._verify_all_packets_received():
+                self._print_transfer_stats()
+                self._assemble_image()
+                self._when_received_end()
+            return
+
+        # 存储最新窗口列表（每次调用重新计算，确保状态与当前 packet_cache 一致）
+        self.image_instance._retransmit_windows = windows
+        # 从第一个尚未填充的窗口开始（重入保护：跳过已填充的窗口）
+        idx = 0
+        while idx < len(windows) and self._is_window_filled(windows[idx][0], windows[idx][1]):
+            idx += 1
+        self.image_instance._retransmit_window_idx = idx
+
+        if idx >= len(windows):
+            # 所有窗口已被填充（罕见情况，防御性处理）
+            if self._verify_all_packets_received():
+                self._print_transfer_stats()
+                self._assemble_image()
+                self._when_received_end()
+            return
+
+        start, end, W = windows[idx]
+        print(f"[smart_retransmission] {len(windows)} missing window(s). "
+              f"Starting window [{idx}/{len(windows) - 1}]: [{start}, {end}] "
+              f"(gap_size={end - start + 1}, W={W}). "
+              f"Total missing: {len(controller.missing_ids)}")
+        self._re_transfer_pack(start)
+        # 立即返回，不自旋等待。
+        # 后续窗口由 _advance_retransmit_window_if_needed() 在收包事件中驱动推进。
