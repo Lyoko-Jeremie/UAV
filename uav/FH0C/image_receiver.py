@@ -236,8 +236,6 @@ class ImageReceiver:
     # 超时检测定时器
     _timeout_timer: typing.Optional[threading.Timer]
     # ========== 滑动窗口配置 ==========
-    # 滑动窗口大小：当收到的包编号超过第一个缺失包+窗口大小时触发重传
-    SLIDING_WINDOW_SIZE: int = 50
     # 包超时时间（秒）- 作为滑动窗口的后备机制，主要处理末尾包场景
     PACKET_TIMEOUT: float = 3.0
     # 总超时时间（秒），超过此时间强制结束
@@ -260,6 +258,7 @@ class ImageReceiver:
         self.image_instance = None
         self._lock = threading.RLock()
         self._cmd_id_counter = 0
+        self._has_sent_start = False  # 防止重复发送 mark=0 指令
 
     def _generate_cmd_id(self) -> int:
         """生成唯一的命令ID用于 cleanSendRetry（调用时已持有锁）"""
@@ -311,6 +310,7 @@ class ImageReceiver:
             print(
                 f"Received image info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
 
+
     def on_receive_image_packet_data(
             self,
             size_len: int,
@@ -333,6 +333,12 @@ class ImageReceiver:
             if self.image_instance.total_packets == 0:
                 # 还没有收到图片信息包
                 return
+
+            # 原子检查-设置-发送，防止并发下多次补发
+            if not self._has_sent_start:
+                self._has_sent_start = True
+                print("[INFO] _has_sent_start is False, re-sending start (mark=0) command!")
+                self._send_start_received()
 
             # 检查 packet_id 是否在有效范围内
             if packet_id >= self.image_instance.total_packets:
@@ -373,6 +379,11 @@ class ImageReceiver:
                         f"Duplicate packet {packet_id} with same data, ignored (dup_count={self.image_instance.duplicate_count})")
                 else:
                     print(f"Duplicate packet {packet_id} with different data! Keeping original.")
+                # 再次检查 _has_sent_start，防止极端情况下未发
+                if not self._has_sent_start:
+                    print("[INFO] (dup) _has_sent_start is False, re-sending start (mark=0) command!")
+                    self._send_start_received()
+                    self._has_sent_start = True
                 # 重复包也要重置定时器，因为数据流仍在正常传输
                 self._start_timeout_timer()
                 return
@@ -387,8 +398,6 @@ class ImageReceiver:
                   f"cache size: {len(self.image_instance.packet_cache)}, "
                   f"stats: recv={self.image_instance.total_received_count}, dup={self.image_instance.duplicate_count}")
 
-            # 移除滑动窗口检测丢包的调用，完全交由智能重发窗口算法处理
-            # self._check_and_request_missing_packets_sliding_window(packet_id)
 
             # 检查是否已接收完所有包
             if len(self.image_instance.packet_cache) >= self.image_instance.total_packets:
@@ -413,6 +422,9 @@ class ImageReceiver:
             if self.image_instance.total_packets == 0:
                 # 还没有收到图片信息包
                 return
+
+            # 收到 EOF 包也认为对端已开始发送，标记 _has_sent_start = True
+            self._has_sent_start = True
 
             first_missing = self._calculate_first_missing_packet()
             print(
@@ -448,50 +460,6 @@ class ImageReceiver:
             if i not in self.image_instance.packet_cache:
                 return i
         return self.image_instance.total_packets
-
-    def _check_and_request_missing_packets_sliding_window(self, current_packet_id: int):
-        """
-        使用滑动窗口方法检查并请求丢失的数据包（调用时已持有锁）
-        
-        滑动窗口逻辑：
-        - first_missing_packet: 从0开始第一个未收到的包（窗口起点）
-        - 当 current_packet_id >= first_missing_packet + SLIDING_WINDOW_SIZE 时触发重传
-        - 冷却机制：只有当 first_missing_packet 变化后才允许再次触发
-        """
-        if self.image_instance is None:
-            return
-
-        first_missing = self._calculate_first_missing_packet()
-
-        # 如果没有缺失包，不需要重传
-        if first_missing >= self.image_instance.total_packets:
-            return
-
-        # 计算窗口尾部位置
-        window_end = first_missing + self.SLIDING_WINDOW_SIZE
-
-        # 检查是否触达窗口尾部
-        if current_packet_id >= window_end:
-            # 冷却检查：只有当窗口前移（first_missing 变化）后才允许再次触发
-            if first_missing != self.image_instance.last_retransmit_at_packet:
-                print(f"Sliding window triggered! first_missing={first_missing}, "
-                      f"current={current_packet_id}, window_end={window_end}, "
-                      f"last_retransmit_at={self.image_instance.last_retransmit_at_packet}")
-
-                # 更新统计信息
-                self.image_instance.window_triggered_retransmit_count += 1
-                self.image_instance.retransmit_request_count += 1
-
-                # 发送重传请求
-                self._re_transfer_pack(first_missing)
-
-                # 更新冷却标记
-                self.image_instance.last_retransmit_at_packet = first_missing
-
-    def _check_and_request_missing_packets(self, current_packet_id: int):
-        """检查并请求丢失的数据包（调用时已持有锁）- 已弃用，保留兼容"""
-        # 已由 _check_and_request_missing_packets_sliding_window 替代
-        pass
 
     def _verify_all_packets_received(self) -> bool:
         """验证是否收齐了所有数据包（调用时已持有锁）"""
@@ -633,20 +601,25 @@ class ImageReceiver:
         self._clean_remote_image()
         # 清空当前图片实例
         self.image_instance = None
+        self._has_sent_start = False  # 结束后重置
 
     def _send_start_received(self):
         """发送开始传输指令（调用时已持有锁）"""
-        cc = self.airplane.s.ss
-        (order_count, cmd) = self._send_transfer_pack(0x00_00_00_00)
-        print("_start_time_received", order_count, cmd.hex(' '))
-        # 生成唯一的命令ID用于取消重发
-        cmd_id = self._generate_cmd_id()
-        # 记录待取消的命令ID和期望收到的第一个包（第0包）
-        if self.image_instance is not None:
-            self.image_instance.pending_transfer_cmd_id = cmd_id
-            self.image_instance.expected_first_packet = 0
-        cc.sendCommand(cmd, max_retry=2, cmd_id_for_clean=cmd_id)
-        pass
+        with self._lock:
+            if hasattr(self, '_has_sent_start') and self._has_sent_start:
+                print("[WARNING] _send_start_received() called more than once! 忽略本次 mark=0 指令。")
+                return
+            self._has_sent_start = True
+            cc = self.airplane.s.ss
+            (order_count, cmd) = self._send_transfer_pack(0x00_00_00_00)
+            print("_start_time_received", order_count, cmd.hex(' '))
+            # 生成唯一的命令ID用于取消重发
+            cmd_id = self._generate_cmd_id()
+            # 记录待取消的命令ID和期望收到的第一个包（第0包）
+            if self.image_instance is not None:
+                self.image_instance.pending_transfer_cmd_id = cmd_id
+                self.image_instance.expected_first_packet = 0
+            cc.sendCommand(cmd, max_retry=2, cmd_id_for_clean=cmd_id)
 
     def _re_transfer_pack(self, pack_id: int):
         """发送从指定包开始重传的指令（调用时已持有锁）"""
