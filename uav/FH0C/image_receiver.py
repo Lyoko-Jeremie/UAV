@@ -825,6 +825,7 @@ class ImageReceiver:
     def smart_retransmission(self, alpha=5, W_max=32):
         """
         智能重发窗口主流程。可在图片接收完成检测后调用。
+        协议要求：全部传输完毕后的终止指令必须是 [0xBB, 0x08, 0x0A, id, count, 0xFF_FF_FF_FF, checksum]
         """
         if self.image_instance is None:
             return
@@ -841,5 +842,5 @@ class ImageReceiver:
                 if cur_max_id >= end or all(pid in self.image_instance.packet_cache for pid in range(start, end+1)):
                     break
                 time.sleep(0.05)  # 等待新包到达
-        # 最后一个区间补齐后，发送重发最后包ID终止重发
-        self._re_transfer_pack(total_packets - 1)
+        # 所有重发窗口补齐后，发送协议要求的终止指令（清除远端缓存）
+        self._clean_remote_image()
