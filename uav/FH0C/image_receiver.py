@@ -387,8 +387,8 @@ class ImageReceiver:
                   f"cache size: {len(self.image_instance.packet_cache)}, "
                   f"stats: recv={self.image_instance.total_received_count}, dup={self.image_instance.duplicate_count}")
 
-            # 使用滑动窗口检测丢包
-            self._check_and_request_missing_packets_sliding_window(packet_id)
+            # 移除滑动窗口检测丢包的调用，完全交由智能重发窗口算法处理
+            # self._check_and_request_missing_packets_sliding_window(packet_id)
 
             # 检查是否已接收完所有包
             if len(self.image_instance.packet_cache) >= self.image_instance.total_packets:
