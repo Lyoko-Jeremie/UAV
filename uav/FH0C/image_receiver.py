@@ -6,6 +6,10 @@ import time
 import typing
 from struct import pack
 
+import numpy as np
+
+from .image_process import image_file_2_mat, write_mat_2_file
+
 if typing.TYPE_CHECKING:
     from . import AirplaneController
     from .CommandConstructor import CmdType
@@ -652,7 +656,7 @@ class ImageReceiver:
             cc.sendCommand(cmd)
             return order_count
 
-    def get_image(self, count_cmd_id: int) -> typing.Optional[bytes]:
+    def get_image(self, count_cmd_id: int) -> typing.Optional[np.ndarray]:
         """
         获取已接收完成的图片数据
         :param count_cmd_id: 拍照指令的 order_count
@@ -660,7 +664,7 @@ class ImageReceiver:
         """
         with self._lock:
             if count_cmd_id in self.received_image_cache:
-                return self.received_image_cache[count_cmd_id].image_data
+                return image_file_2_mat(self.received_image_cache[count_cmd_id].image_data)
             return None
 
     def get_latest_image(self) -> typing.Optional[bytes]:
@@ -702,13 +706,8 @@ class ImageReceiver:
         image_data = self.get_image(count_cmd_id)
         if image_data is None:
             return False
-        try:
-            with open(file_path, 'wb') as f:
-                f.write(image_data)
-            return True
-        except IOError as e:
-            print(f"Failed to save image: {e}")
-            return False
+        write_mat_2_file(image_data, file_path)
+        return True
 
     def save_latest_image_to_file(self, file_path: str) -> bool:
         """
