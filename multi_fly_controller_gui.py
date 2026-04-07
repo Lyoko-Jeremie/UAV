@@ -57,14 +57,14 @@ class ImageCaptureThread(threading.Thread):
                 if not self.airplane.image_receiver.is_transfer_in_progress():
                     # 传输已完成，获取图片
                     image_data = self.airplane.image_receiver.get_image(order_count)
-                    if image_data:
+                    if image_data is not None:
                         self._call_callback('status_update', f"图片接收完成！大小: {len(image_data)} 字节")
                         self._call_callback('image_ready', image_data)
                         return
                     else:
                         # 尝试获取最新图片
                         image_data = self.airplane.image_receiver.get_latest_image()
-                        if image_data:
+                        if image_data is not None:
                             self._call_callback('status_update', f"图片接收完成！大小: {len(image_data)} 字节")
                             self._call_callback('image_ready', image_data)
                             return
