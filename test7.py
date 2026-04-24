@@ -1,6 +1,7 @@
 import asyncio
-from dataclasses import dataclass
-from typing import Any, List
+import math
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
 import cv2
 import numpy as np
@@ -13,6 +14,86 @@ class Waypoint:
     x: int
     y: int
     h: int
+
+
+@dataclass
+class BoundaryConstraint:
+    x_min: int = 0
+    x_max: int = 600
+    y_min: int = 0
+    y_max: int = 900
+    h_min: int = 0
+    h_max: int = 300
+
+
+@dataclass
+class FleetConstraintOptions:
+    boundary: BoundaryConstraint = field(default_factory=BoundaryConstraint)
+    min_xy_distance: Optional[float] = 50.0
+
+
+class ConstraintCoordinator:
+    def __init__(self, options: FleetConstraintOptions):
+        self.options = options
+        self._positions: Dict[str, Waypoint] = {}
+        self._lock = asyncio.Lock()
+
+    def _clamp_to_boundary(self, wp: Waypoint) -> Waypoint:
+        b = self.options.boundary
+        return Waypoint(
+            x=max(b.x_min, min(b.x_max, int(wp.x))),
+            y=max(b.y_min, min(b.y_max, int(wp.y))),
+            h=max(b.h_min, min(b.h_max, int(wp.h))),
+        )
+
+    def _is_xy_safe(self, drone_id: str, wp: Waypoint) -> bool:
+        threshold = self.options.min_xy_distance
+        if threshold is None:
+            return True
+
+        for other_id, other_wp in self._positions.items():
+            if other_id == drone_id:
+                continue
+            if math.hypot(wp.x - other_wp.x, wp.y - other_wp.y) < threshold:
+                return False
+        return True
+
+    def _search_safe_waypoint(self, drone_id: str, target: Waypoint, fallback: Waypoint) -> Waypoint:
+        threshold = self.options.min_xy_distance
+        if threshold is None:
+            return target
+
+        if self._is_xy_safe(drone_id, target):
+            return target
+
+        fallback = self._clamp_to_boundary(fallback)
+        if self._is_xy_safe(drone_id, fallback):
+            return fallback
+
+        # 以目标点为中心，按环形离散采样寻找满足最小间距的可行点。
+        for radius in (threshold, threshold * 1.5, threshold * 2.0, threshold * 2.5, threshold * 3.0):
+            for angle_deg in range(0, 360, 30):
+                angle = math.radians(angle_deg)
+                candidate = Waypoint(
+                    x=int(target.x + radius * math.cos(angle)),
+                    y=int(target.y + radius * math.sin(angle)),
+                    h=target.h,
+                )
+                candidate = self._clamp_to_boundary(candidate)
+                if self._is_xy_safe(drone_id, candidate):
+                    return candidate
+
+        return fallback
+
+    async def reserve_safe_waypoint(self, drone_id: str, target: Waypoint, fallback: Waypoint) -> Waypoint:
+        async with self._lock:
+            clamped_target = self._clamp_to_boundary(target)
+            safe = self._search_safe_waypoint(drone_id, clamped_target, fallback)
+            self._positions[drone_id] = safe
+            return safe
+
+    async def register_initial_position(self, drone_id: str, initial_wp: Waypoint) -> Waypoint:
+        return await self.reserve_safe_waypoint(drone_id, initial_wp, initial_wp)
 
 
 def process_image_and_plan_next_routes(image_bytes: bytes, last_waypoint: Waypoint) -> List[Waypoint]:
@@ -40,6 +121,8 @@ class AsyncDroneFeedbackLoop:
         airplane_id: str,
         loop: asyncio.AbstractEventLoop,
         stop_event: asyncio.Event,
+        coordinator: ConstraintCoordinator,
+        seed_waypoints: Optional[List[Waypoint]] = None,
         takeoff_h: int = 120,
         capture_interval_s: float = 1.0,
     ):
@@ -47,8 +130,10 @@ class AsyncDroneFeedbackLoop:
         self.airplane_id = airplane_id
         self.loop = loop
         self.stop_event = stop_event
+        self.coordinator = coordinator
         self.takeoff_h = takeoff_h
         self.capture_interval_s = capture_interval_s
+        self.seed_waypoints = seed_waypoints or []
 
         self.airplane: Any = manager.get_airplane(airplane_id)
         self.image_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=2)
@@ -75,8 +160,13 @@ class AsyncDroneFeedbackLoop:
             except asyncio.TimeoutError:
                 continue
 
-            self.airplane.goto(int(wp.x), int(wp.y), int(wp.h))
-            self.last_waypoint = wp
+            safe_wp = await self.coordinator.reserve_safe_waypoint(
+                self.airplane_id,
+                wp,
+                self.last_waypoint,
+            )
+            self.airplane.goto(int(safe_wp.x), int(safe_wp.y), int(safe_wp.h))
+            self.last_waypoint = safe_wp
             await asyncio.sleep(0.35)
 
     async def _capture_loop(self) -> None:
@@ -111,13 +201,21 @@ class AsyncDroneFeedbackLoop:
     async def run(self) -> None:
         tasks: List[asyncio.Task[Any]] = []
         try:
+            self.last_waypoint = await self.coordinator.register_initial_position(
+                self.airplane_id,
+                self.last_waypoint,
+            )
             self.airplane.takeoff(self.takeoff_h)
             self.has_taken_off = True
             await asyncio.sleep(4)
 
             # 起飞后先投递首批航点，尽快进入飞行-感知-重规划循环。
-            await self.route_queue.put(Waypoint(100, 100, self.takeoff_h))
-            await self.route_queue.put(Waypoint(100, 200, self.takeoff_h))
+            if self.seed_waypoints:
+                for wp in self.seed_waypoints:
+                    await self.route_queue.put(wp)
+            else:
+                await self.route_queue.put(Waypoint(100, 100, self.takeoff_h))
+                await self.route_queue.put(Waypoint(100, 200, self.takeoff_h))
 
             tasks = [
                 asyncio.create_task(self._flight_loop()),
@@ -154,9 +252,33 @@ async def main_async() -> None:
         "FH0C:COM5",
     ]
 
+    # 可配置约束：边界默认 x=[0,600], y=[0,900], h=[0,300]。
+    # 将 min_xy_distance 设为 None 可关闭无人机间最小间距约束。
+    constraints = FleetConstraintOptions(
+        boundary=BoundaryConstraint(),
+        min_xy_distance=50.0,
+    )
+    coordinator = ConstraintCoordinator(constraints)
+
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
-    workers = [AsyncDroneFeedbackLoop(manager, aid, loop, stop_event) for aid in airplane_ids]
+    workers: List[AsyncDroneFeedbackLoop] = []
+    for idx, aid in enumerate(airplane_ids):
+        lane_x = 100 + idx * 120
+        seeds = [
+            Waypoint(lane_x, 120, 120),
+            Waypoint(lane_x, 240, 120),
+        ]
+        workers.append(
+            AsyncDroneFeedbackLoop(
+                manager=manager,
+                airplane_id=aid,
+                loop=loop,
+                stop_event=stop_event,
+                coordinator=coordinator,
+                seed_waypoints=seeds,
+            )
+        )
 
     flush_task = asyncio.create_task(manager_flush_pump(manager, stop_event))
     worker_tasks = [asyncio.create_task(w.run()) for w in workers]
