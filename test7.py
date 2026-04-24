@@ -1,3 +1,11 @@
+"""多机异步飞行示例。
+
+该脚本演示了一个简化的“飞行 -> 图像采集 -> 路径重规划”闭环：
+1. 每架无人机异步执行飞行、拍照和规划任务。
+2. ConstraintCoordinator 负责统一约束边界和机间最小安全距离。
+3. 图像处理逻辑目前是占位实现，便于后续替换为真实 OpenCV 算法。
+"""
+
 import asyncio
 import math
 from dataclasses import dataclass, field
@@ -11,6 +19,8 @@ from uav import UAVAirplaneManager, get_airplane_manager
 
 @dataclass
 class Waypoint:
+    """单个航点，包含平面坐标和高度。"""
+
     x: int
     y: int
     h: int
@@ -18,6 +28,8 @@ class Waypoint:
 
 @dataclass
 class BoundaryConstraint:
+    """飞行空间边界约束。"""
+
     x_min: int = 0
     x_max: int = 600
     y_min: int = 0
@@ -28,17 +40,23 @@ class BoundaryConstraint:
 
 @dataclass
 class FleetConstraintOptions:
+    """多机协同约束配置。"""
+
     boundary: BoundaryConstraint = field(default_factory=BoundaryConstraint)
     min_xy_distance: Optional[float] = 50.0
 
 
 class ConstraintCoordinator:
+    """集中维护多架无人机的占位点，并为新航点做安全修正。"""
+
     def __init__(self, options: FleetConstraintOptions):
         self.options = options
         self._positions: Dict[str, Waypoint] = {}
+        # 多个协程会并发申请航点，使用锁确保位置表更新一致。
         self._lock = asyncio.Lock()
 
     def _clamp_to_boundary(self, wp: Waypoint) -> Waypoint:
+        """将航点限制在允许飞行区域内。"""
         b = self.options.boundary
         return Waypoint(
             x=max(b.x_min, min(b.x_max, int(wp.x))),
@@ -47,6 +65,7 @@ class ConstraintCoordinator:
         )
 
     def _is_xy_safe(self, drone_id: str, wp: Waypoint) -> bool:
+        """检查目标点与其他无人机的水平间距是否满足约束。"""
         threshold = self.options.min_xy_distance
         if threshold is None:
             return True
@@ -59,6 +78,7 @@ class ConstraintCoordinator:
         return True
 
     def _search_safe_waypoint(self, drone_id: str, target: Waypoint, fallback: Waypoint) -> Waypoint:
+        """优先使用目标点，否则在其周围搜索一个满足安全距离的替代点。"""
         threshold = self.options.min_xy_distance
         if threshold is None:
             return target
@@ -86,6 +106,7 @@ class ConstraintCoordinator:
         return fallback
 
     async def reserve_safe_waypoint(self, drone_id: str, target: Waypoint, fallback: Waypoint) -> Waypoint:
+        """为无人机登记一个经过约束修正后的航点。"""
         async with self._lock:
             clamped_target = self._clamp_to_boundary(target)
             safe = self._search_safe_waypoint(drone_id, clamped_target, fallback)
@@ -93,6 +114,7 @@ class ConstraintCoordinator:
             return safe
 
     async def register_initial_position(self, drone_id: str, initial_wp: Waypoint) -> Waypoint:
+        """将初始位置也纳入统一的安全约束管理。"""
         return await self.reserve_safe_waypoint(drone_id, initial_wp, initial_wp)
 
 
@@ -115,6 +137,8 @@ def process_image_and_plan_next_routes(image_bytes: bytes, last_waypoint: Waypoi
 
 
 class AsyncDroneFeedbackLoop:
+    """单架无人机的异步闭环控制器。"""
+
     def __init__(
         self,
         manager: UAVAirplaneManager,
@@ -136,12 +160,15 @@ class AsyncDroneFeedbackLoop:
         self.seed_waypoints = seed_waypoints or []
 
         self.airplane: Any = manager.get_airplane(airplane_id)
+        # 图像队列只保留很少的数据，避免处理速度落后时积压旧画面。
         self.image_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=2)
+        # 路径队列允许短暂缓存未来航点，平衡规划和飞行速度。
         self.route_queue: asyncio.Queue[Waypoint] = asyncio.Queue(maxsize=16)
         self.last_waypoint = Waypoint(0, 0, takeoff_h)
         self.has_taken_off = False
 
     def _on_image_received(self, image_bytes: bytes) -> None:
+        """接收底层回调中的图像数据，并安全转交给事件循环线程。"""
         def _push() -> None:
             if self.image_queue.full():
                 try:
@@ -154,6 +181,7 @@ class AsyncDroneFeedbackLoop:
         self.loop.call_soon_threadsafe(_push)
 
     async def _flight_loop(self) -> None:
+        """持续消费规划结果并驱动无人机飞向下一个安全航点。"""
         while not self.stop_event.is_set():
             try:
                 wp = await asyncio.wait_for(self.route_queue.get(), timeout=0.5)
@@ -170,6 +198,7 @@ class AsyncDroneFeedbackLoop:
             await asyncio.sleep(0.35)
 
     async def _capture_loop(self) -> None:
+        """按固定周期触发拍照。"""
         while not self.stop_event.is_set():
             self.airplane.cap_image(
                 user_receive_callback=self._on_image_received,
@@ -178,6 +207,7 @@ class AsyncDroneFeedbackLoop:
             await asyncio.sleep(self.capture_interval_s)
 
     async def _plan_loop(self) -> None:
+        """读取最新图像并在后台线程中生成新的航点序列。"""
         while not self.stop_event.is_set():
             try:
                 image_bytes = await asyncio.wait_for(self.image_queue.get(), timeout=0.5)
@@ -191,6 +221,7 @@ class AsyncDroneFeedbackLoop:
             )
 
             for wp in next_points:
+                # 若规划速度快于飞行速度，丢弃最旧航点，优先执行最新决策。
                 if self.route_queue.full():
                     try:
                         self.route_queue.get_nowait()
@@ -199,6 +230,7 @@ class AsyncDroneFeedbackLoop:
                 self.route_queue.put_nowait(wp)
 
     async def run(self) -> None:
+        """执行起飞、任务循环和最终降落的完整生命周期。"""
         tasks: List[asyncio.Task[Any]] = []
         try:
             self.last_waypoint = await self.coordinator.register_initial_position(
@@ -236,12 +268,14 @@ class AsyncDroneFeedbackLoop:
 
 
 async def manager_flush_pump(manager: UAVAirplaneManager, stop_event: asyncio.Event) -> None:
+    """持续刷新底层管理器，驱动通信和状态同步。"""
     while not stop_event.is_set():
         manager.flush()
         await asyncio.sleep(0.2)
 
 
 async def main_async() -> None:
+    """启动多架无人机并让它们在共享约束下并发执行任务。"""
     manager = get_airplane_manager()
     manager.start()
     manager.flush()
@@ -264,6 +298,7 @@ async def main_async() -> None:
     stop_event = asyncio.Event()
     workers: List[AsyncDroneFeedbackLoop] = []
     for idx, aid in enumerate(airplane_ids):
+        # 为每架无人机分配不同的初始航线，降低起飞后立即冲突的概率。
         lane_x = 100 + idx * 120
         seeds = [
             Waypoint(lane_x, 120, 120),
@@ -287,6 +322,7 @@ async def main_async() -> None:
     try:
         await asyncio.sleep(mission_seconds)
     finally:
+        # 先通知各任务停止，再等待协程收尾，最后销毁底层管理器。
         stop_event.set()
         await asyncio.gather(*worker_tasks, return_exceptions=True)
         await asyncio.gather(flush_task, return_exceptions=True)
