@@ -8,5 +8,7 @@ def image_file_2_mat(imageFileData: bytes):
     return img
 
 def write_mat_2_file(m: np.ndarray, path: str):
-    cv2.imwrite(path, m)
+    im_arr = np.frombuffer(m, dtype=np.uint8)
+    cv2.imwrite(path, im_arr)
+    print(f"write_mat_2_file Image saved to {path}")
     pass
