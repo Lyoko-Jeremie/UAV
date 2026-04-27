@@ -341,7 +341,9 @@ class ReadDataParser:
         while len(self.read_buffer) > 3:
             header = self.read_buffer[0:3]
             size = header[1]
-            if len(self.read_buffer) <= size + 3:
+            # ★ 修复 off-by-one：原 `<=` 导致 buffer 中恰好剩余完整包时（如 EOF 6 字节）永远 break，
+            # 致使 EOF 包从不被解析（EOF triggered 始终为 0），重传只能靠超时触发，错失无人机响应窗口。
+            if len(self.read_buffer) < size + 3:
                 break
 
             # print("header", header, size, header[0], header[1], header[2])
