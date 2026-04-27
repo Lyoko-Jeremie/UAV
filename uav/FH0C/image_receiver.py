@@ -139,6 +139,10 @@ class ImageInfo:
     _retransmit_windows: list = dataclasses.field(default_factory=list)
     # 当前正在处理的窗口索引
     _retransmit_window_idx: int = 0
+    # 上次发出重传指令的窗口起始包ID，用于判断新包是否属于新的重传流
+    _current_request_start_packet: typing.Optional[int] = None
+    # 上次发出重传指令的时间戳，用于实现观察期
+    _current_request_time: float = 0.0
 
 
 # =============================================
@@ -827,12 +831,13 @@ class ImageReceiver:
         """
         在接收到新包后，检查当前重发窗口是否应推进到下一个窗口。
 
-        这里采用“流已越过窗口就推进”的策略：
-          - 如果当前窗口已补齐，推进；
-          - 如果 packet_id >= 当前窗口 end，说明当前重传流已经越过该窗口，也推进；
+        这里采用“流已越过窗口就推进”的策略，并增加了对重传延迟的考量：
+          - 如果当前窗口已补齐，立即推进；
+          - 如果 packet_id >= 当前窗口 end，说明可能有数据流越过窗口：
+            - 但需要满足“重传观察期”：发出重传请求后，需要等待一小段时间（如0.2秒）或者收到
+              属于新重传流的包（packet_id >= start），才能确认重传指令已送达并生效。
+            - 如果在观察期内收到的包 packet_id 很大，可能是之前的旧流残余，不应触发推进。
           - 未补齐的包不会丢失跟踪，下一轮 timeout / EOF 会重新计算 missing list 再补。
-
-        这样可以避免一直卡在第一个顽固缺包上，导致后面的缺包没有机会被针对性请求。
         """
         if self.image_instance is None:
             return
@@ -848,23 +853,54 @@ class ImageReceiver:
         start, end, W = windows[idx]
 
         window_done = self._is_window_filled(start, end)
-        stream_passed_window = packet_id >= end
-
-        if not window_done and not stream_passed_window:
+        if window_done:
+            # 窗口已补齐，立即推进
+            self._move_to_next_window(idx)
             return
 
-        if stream_passed_window and not window_done:
-            missing_in_window = [
-                pid for pid in range(start, end + 1)
-                if pid not in self.image_instance.packet_cache
-            ]
-            print(
-                f"[smart_retransmission] Passed window [{start}, {end}] "
-                f"but still missing {missing_in_window[:20]}. "
-                f"Advancing anyway; it will be retried in the next missing scan."
-            )
+        # 检查是否满足“流已越过”条件
+        # 增加延迟适应：只有当收到的 packet_id 确实大于等于当前窗口的 end 时才考虑
+        if packet_id < end:
+            return
 
-        idx += 1
+        # 此时 packet_id >= end，说明收到了窗口之后的包
+        # 需要判断这是“旧流残余”还是“重传请求已生效后的新流”
+        now = time.time()
+        # 观察期定义（单位：秒）。通常 200ms 足够覆盖指令往返及初期缓冲
+        observation_period = 0.2
+        
+        # 满足以下任一条件则认为可以推进：
+        # 1. 已经过了观察期（指令肯定到了，现在的流确实是越过了）
+        # 2. 收到的包虽然 >= end，但它属于本次重传请求发起的流（packet_id >= start 且距离上次请求时间有一定间隔）
+        #    注意：实际上 packet_id >= end 已经蕴含了 packet_id >= start。
+        #    核心是判断“时间”。如果在请求发出后极短时间内（如 < 100ms）收到一个大 ID 包，
+        #    那它极大概率是旧流，不代表重传指令已送达。
+        
+        time_since_request = now - self.image_instance._current_request_time
+        if time_since_request < observation_period:
+            # 还在观察期内，不轻易判定为流已越过
+            return
+
+        # 超过观察期且 packet_id >= end，认为重传流已越过当前窗口
+        missing_in_window = [
+            pid for pid in range(start, end + 1)
+            if pid not in self.image_instance.packet_cache
+        ]
+        print(
+            f"[smart_retransmission] Passed window [{start}, {end}] "
+            f"but still missing {missing_in_window[:20]}. "
+            f"Wait time {time_since_request:.2f}s > {observation_period}s. "
+            f"Advancing anyway; it will be retried in the next missing scan."
+        )
+        self._move_to_next_window(idx)
+
+    def _move_to_next_window(self, current_idx: int):
+        """推进状态机到下一个未完成的窗口"""
+        if self.image_instance is None:
+            return
+        windows = self.image_instance._retransmit_windows
+        idx = current_idx + 1
+        
         while idx < len(windows):
             ns, ne, _ = windows[idx]
             if not self._is_window_filled(ns, ne):
@@ -882,6 +918,8 @@ class ImageReceiver:
             )
             self.image_instance.retransmit_request_count += 1
             self.image_instance.window_triggered_retransmit_count += 1
+            self.image_instance._current_request_start_packet = ns
+            self.image_instance._current_request_time = time.time()
             self._re_transfer_pack(ns)
         else:
             print(
@@ -965,6 +1003,8 @@ class ImageReceiver:
 
         self.image_instance.retransmit_request_count += 1
         self.image_instance.window_triggered_retransmit_count += 1
+        self.image_instance._current_request_start_packet = start
+        self.image_instance._current_request_time = now
         self._re_transfer_pack(start)
         # 立即返回，不自旋等待。
         # 后续窗口由 _advance_retransmit_window_if_needed() 在收包事件中驱动推进。
