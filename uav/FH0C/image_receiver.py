@@ -485,6 +485,20 @@ class ImageReceiver:
         if self.image_instance is None:
             return
 
+        if not self._verify_all_packets_received():
+            missing_ids = _get_missing_ids(
+                self.image_instance.total_packets,
+                set(self.image_instance.packet_cache.keys()),
+            )
+            print(
+                f"[WARNING] _assemble_image called with incomplete packets: "
+                f"received={len(self.image_instance.packet_cache)}/"
+                f"{self.image_instance.total_packets}, "
+                f"missing_count={len(missing_ids)}, "
+                f"first_missing={missing_ids[0] if missing_ids else None}, "
+                f"missing_preview={missing_ids[:20]}"
+            )
+
         image_data = bytearray()
         missing_count = 0
 
@@ -834,6 +848,17 @@ class ImageReceiver:
             return
 
         start, end, W = windows[idx]
+
+        if packet_id >= end and not self._is_window_filled(start, end):
+            missing_in_window = [
+                pid for pid in range(start, end + 1)
+                if pid not in self.image_instance.packet_cache
+            ]
+            print(
+                f"[smart_retransmission] Passed window [{start}, {end}] "
+                f"but still missing {missing_in_window[:20]}. "
+                f"Keep waiting/retry current window."
+            )
 
         # 只有窗口内所有缺失包真的收到，才认为当前窗口完成。
         # 不能用 packet_id >= end 判断完成，因为重传流中仍可能再次丢失 start/end 包；
