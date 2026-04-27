@@ -294,8 +294,8 @@ class ImageReceiver:
             origin_data: bytearray,
     ):
         """接收到无人机拍照回传的图片信息包，包含图片的总大小和数据包数量等信息"""
-        # print(f"on_receive_image_pack_info: fly_id={_fly_id}, photo_count_cmd_id={photo_count_cmd_id}, "
-        #       f"total_size={total_size}, data_type={data_type}")
+        print(f"on_receive_image_pack_info: fly_id={_fly_id}, photo_count_cmd_id={photo_count_cmd_id}, "
+              f"total_size={total_size}, data_type={data_type}")
         if data_type != 0:
             # skip none-image data
             return
@@ -315,8 +315,8 @@ class ImageReceiver:
             self._send_start_received()
             # 启动超时检测定时器，防止第一个数据包丢失或无人机无响应
             self._start_timeout_timer()
-            # print(
-            #     f"Received image info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
+            print(
+                f"Received image info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
 
 
     def on_receive_image_packet_data(
@@ -449,14 +449,14 @@ class ImageReceiver:
             # 检查是否收齐所有包
             if first_missing >= self.image_instance.total_packets:
                 # 所有包已收到，组装图片并结束传输
-                # print(f"EOF received, all {self.image_instance.total_packets} packets received successfully")
+                print(f"EOF received, all {self.image_instance.total_packets} packets received successfully")
                 self._print_transfer_stats()
                 self._assemble_image()
                 self._when_received_end()
                 return
 
             # 还有丢包，使用智能重发窗口算法替代原有重传逻辑
-            # print(f"EOF received, missing packets, using smart retransmission.")
+            print(f"EOF received, missing packets, using smart retransmission.")
             self.smart_retransmission()
             # 重新启动超时定时器
             self._start_timeout_timer()
@@ -647,7 +647,7 @@ class ImageReceiver:
         """发送从指定包开始重传的指令（调用时已持有锁）"""
         cc = self.airplane.s.ss
         (order_count, cmd) = self._send_transfer_pack(pack_id)
-        # print("_re_transfer_pack", order_count, cmd.hex(' '))
+        print("_re_transfer_pack", order_count, cmd.hex(' '))
         # 生成唯一的命令ID用于取消重发
         cmd_id = self._generate_cmd_id()
         # 记录待取消的命令ID和期望收到的第一个包（即请求重传的pack_id）
