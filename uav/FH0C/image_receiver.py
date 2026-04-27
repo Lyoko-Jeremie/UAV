@@ -470,7 +470,7 @@ class ImageReceiver:
         print(f"  Duplicate packets: {info.duplicate_count}")
         print(f"  Transmission efficiency: {efficiency:.1f}%")
         print(f"  Total retransmit requests: {info.retransmit_request_count}")
-        print(f"    - Window triggered: {info.window_triggered_retransmit_count}")
+        # print(f"    - Window triggered: {info.window_triggered_retransmit_count}")
         print(f"    - Timeout triggered: {info.timeout_triggered_retransmit_count}")
         print(f"    - EOF triggered: {info.eof_triggered_retransmit_count}")
         print(f"  Total transfer time: {elapsed_time:.2f}s")
