@@ -835,8 +835,10 @@ class ImageReceiver:
 
         start, end, W = windows[idx]
 
-        # 算法第5c条：cur_max_id >= end 或窗口内包全部收到 → 切换到下一区间
-        window_done = (packet_id >= end) or self._is_window_filled(start, end)
+        # 只有窗口内所有缺失包真的收到，才认为当前窗口完成。
+        # 不能用 packet_id >= end 判断完成，因为重传流中仍可能再次丢失 start/end 包；
+        # 收到 end 之后的包，只能说明数据流已经越过该位置，不能证明窗口已补齐。
+        window_done = self._is_window_filled(start, end)
         if not window_done:
             return
 
