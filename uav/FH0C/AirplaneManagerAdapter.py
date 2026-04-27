@@ -31,16 +31,13 @@ class AirplaneController(object):
         pass
 
     def get_image_transfer_progress(self):
-        self.image_receiver.get_transfer_progress()
-        pass
+        return self.image_receiver.get_transfer_progress()
 
     def is_image_transfer_in_progress(self):
-        self.image_receiver.is_transfer_in_progress()
-        pass
+        return self.image_receiver.is_transfer_in_progress()
 
     def get_latest_image(self):
-        self.image_receiver.get_latest_image()
-        pass
+        return self.image_receiver.get_latest_image()
 
     def takeoff(self, high: int, ):
         """起飞到指定高度 单位cm"""
