@@ -364,7 +364,7 @@ class ImageReceiver:
             # 检查是否需要取消重发（收到期望的第一个包时取消）
             if (self.image_instance.pending_transfer_cmd_id is not None and
                     self.image_instance.expected_first_packet is not None and
-                    packet_id == self.image_instance.expected_first_packet):
+                    packet_id >= self.image_instance.expected_first_packet):
                 cc = self.airplane.s.ss
                 cc.cleanSendRetry(self.image_instance.pending_transfer_cmd_id)
                 # print(f"cleanSendRetry called for cmd_id={self.image_instance.pending_transfer_cmd_id}, "
@@ -417,6 +417,14 @@ class ImageReceiver:
             if len(self.image_instance.packet_cache) >= self.image_instance.total_packets:
                 # 验证是否真的收齐了所有包
                 if self._verify_all_packets_received():
+                    with self._lock:
+                        idx = self.image_instance._retransmit_window_idx
+                        windows = self.image_instance._retransmit_windows
+                        if windows and idx < len(windows):
+                            start, end, _ = windows[idx]
+                            if start <= packet_id <= end:
+                                print(f"[smart_retransmission] Received requested packet {packet_id} in window [{start}, {end}] (Final packet!)")
+
                     print(f"All {self.image_instance.total_packets} packets received, assembling image...")
                     self._print_transfer_stats()
                     self._assemble_image()
@@ -425,6 +433,14 @@ class ImageReceiver:
                 # 启动/重置超时检测定时器（后备机制）
                 self._start_timeout_timer()
                 # 事件驱动推进重发窗口（实现算法第5条"立即切换到下一区间"的语义）
+                with self._lock:
+                    idx = self.image_instance._retransmit_window_idx
+                    windows = self.image_instance._retransmit_windows
+                    if windows and idx < len(windows):
+                        start, end, _ = windows[idx]
+                        if start <= packet_id <= end:
+                            print(f"[smart_retransmission] Received requested packet {packet_id} in window [{start}, {end}]")
+
                 self._advance_retransmit_window_if_needed(packet_id)
 
     def on_receive_image_packet_data_eof(self, size_len: int, origin_data: bytearray):
@@ -855,6 +871,7 @@ class ImageReceiver:
         window_done = self._is_window_filled(start, end)
         if window_done:
             # 窗口已补齐，立即推进
+            print(f"[smart_retransmission] Window [{start}, {end}] filled. Advancing.")
             self._move_to_next_window(idx)
             return
 
@@ -867,7 +884,7 @@ class ImageReceiver:
         # 需要判断这是“旧流残余”还是“重传请求已生效后的新流”
         now = time.time()
         # 观察期定义（单位：秒）。通常 200ms 足够覆盖指令往返及初期缓冲
-        observation_period = 0.2
+        observation_period = 0.5
         
         # 满足以下任一条件则认为可以推进：
         # 1. 已经过了观察期（指令肯定到了，现在的流确实是越过了）
@@ -886,13 +903,22 @@ class ImageReceiver:
             pid for pid in range(start, end + 1)
             if pid not in self.image_instance.packet_cache
         ]
+        if not missing_in_window:
+            # 实际上在进入此逻辑前 already check window_done
+            print(f"[smart_retransmission] Double-check: Window [{start}, {end}] filled during observation. Advancing.")
+            self._move_to_next_window(idx)
+            return
+
         print(
             f"[smart_retransmission] Passed window [{start}, {end}] "
             f"but still missing {missing_in_window[:20]}. "
             f"Wait time {time_since_request:.2f}s > {observation_period}s. "
-            f"Advancing anyway; it will be retried in the next missing scan."
+            f"Retrying CURRENT window instead of advancing! (Requested start: {start})"
         )
-        self._move_to_next_window(idx)
+        # 关键修复：不再盲目推进，而是重试当前窗口
+        self.image_instance.retransmit_request_count += 1
+        self.image_instance._current_request_time = now
+        self._re_transfer_pack(start)
 
     def _move_to_next_window(self, current_idx: int):
         """推进状态机到下一个未完成的窗口"""
@@ -914,7 +940,7 @@ class ImageReceiver:
             print(
                 f"[smart_retransmission] Advancing to window "
                 f"[{idx}/{len(windows) - 1}]: [{ns}, {ne}] "
-                f"(gap_size={ne - ns + 1}, W={nW})"
+                f"(gap_size={ne - ns + 1}, W={nW}). Requesting start: {ns}"
             )
             self.image_instance.retransmit_request_count += 1
             self.image_instance.window_triggered_retransmit_count += 1
