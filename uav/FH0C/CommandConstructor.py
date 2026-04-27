@@ -525,7 +525,7 @@ class CommandConstructor(CommandConstructorCore):
         # [0x00, 0x16, _order_count(), 0x01]
         (params, order_count) = self.build_cmd_params(22, 0x01)
         cmd = self.join_cmd(CmdType.SINGLE_CONTROL, params)
-        print("send_cap_image", order_count, cmd.hex(' '))
+        # print("send_cap_image", order_count, cmd.hex(' '))
         self.sendCommand(cmd)
         pass
 
