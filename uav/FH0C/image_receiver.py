@@ -721,9 +721,10 @@ class ImageReceiver:
             self.image_instance.expected_first_packet = pack_id
             print(f"[smart_retransmission] _re_transfer_pack for image_id={order_count}, "
                   f"start_packet={pack_id}, cmd_id={cmd_id} (hex: {cmd.hex(' ')})")
-            # ★ max_retry=3→6：发送 7 次（约 700ms），提升无人机收到命令的概率；
-            #   cleanSendRetry 在收到期望的第一个包时立即停止重试，避免持续干扰无人机传输位置
-            cc.sendCommand(cmd, max_retry=6, cmd_id_for_clean=cmd_id)
+            # max_retry=2：共发 3 次（300ms），兼顾命令级丢包冗余。
+            # 不应设过大——每次发送都会让无人机重置传输位置；
+            # cleanSendRetry 会在收到期望的第一个数据包后立即取消剩余重试。
+            cc.sendCommand(cmd, max_retry=2, cmd_id_for_clean=cmd_id)
         pass
 
     def _clean_remote_image(self):
