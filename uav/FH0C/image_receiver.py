@@ -319,8 +319,8 @@ class ImageReceiver:
             self._send_start_received()
             # 启动超时检测定时器，防止第一个数据包丢失或无人机无响应
             self._start_timeout_timer()
-            print(
-                f"Received image info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
+            # print(
+            #     f"Received image info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
 
 
     def on_receive_image_packet_data(
@@ -361,17 +361,44 @@ class ImageReceiver:
             # 统计：总收到包数量+1
             self.image_instance.total_received_count += 1
 
-            # 检查是否需要取消重发（收到期望的第一个包时取消）
+            # 检查是否需要取消重传指令
             if (self.image_instance.pending_transfer_cmd_id is not None and
-                    self.image_instance.expected_first_packet is not None and
-                    packet_id >= self.image_instance.expected_first_packet):
-                cc = self.airplane.s.ss
-                cc.cleanSendRetry(self.image_instance.pending_transfer_cmd_id)
-                # print(f"cleanSendRetry called for cmd_id={self.image_instance.pending_transfer_cmd_id}, "
-                #       f"expected_first_packet={self.image_instance.expected_first_packet}")
-                # 清除待取消的命令ID
-                self.image_instance.pending_transfer_cmd_id = None
-                self.image_instance.expected_first_packet = None
+                    self.image_instance.expected_first_packet is not None):
+                
+                is_duplicate = packet_id in self.image_instance.packet_cache
+                
+                # 精确取消逻辑：
+                # 1. 收到正是期待的那个起始包
+                should_cancel = (packet_id == self.image_instance.expected_first_packet)
+                
+                # 2. 如果是智能重传期间，收到当前窗口内的任何包（说明重传流已到达）
+                if not should_cancel:
+                    idx = self.image_instance._retransmit_window_idx
+                    windows = self.image_instance._retransmit_windows
+                    if windows and idx < len(windows):
+                        start, end, _ = windows[idx]
+                        if start <= packet_id <= end:
+                            should_cancel = True
+                
+                # 3. 保底逻辑：收到比预期大很多的新包（说明流确实跳过去了，老流残余可能性低）
+                if not should_cancel and not is_duplicate:
+                    if packet_id > self.image_instance.expected_first_packet + 10:
+                        should_cancel = True
+                
+                if should_cancel:
+                    cc = self.airplane.s.ss
+                    cc.cleanSendRetry(self.image_instance.pending_transfer_cmd_id)
+                    
+                    # 区分初始确认和重传确认日志
+                    prefix = "[smart_retransmission]"
+                    if self.image_instance.expected_first_packet == 0 and packet_id == 0:
+                        prefix = "[image_transfer] Initial"
+                    
+                    print(f"{prefix} cleanSendRetry for cmd_id={self.image_instance.pending_transfer_cmd_id} "
+                          f"triggered by packet_id={packet_id} (expected={self.image_instance.expected_first_packet}, "
+                          f"is_dup={is_duplicate})")
+                    self.image_instance.pending_transfer_cmd_id = None
+                    self.image_instance.expected_first_packet = None
 
             # print(f"on_receive_image_packet_data: size_len={size_len}, packet_id={packet_id}, "
             #       f"total_packets={self.image_instance.total_packets}, cache_size={len(self.image_instance.packet_cache)}, "
@@ -385,6 +412,15 @@ class ImageReceiver:
             if packet_id in self.image_instance.packet_cache:
                 # 统计：重复包数量+1
                 self.image_instance.duplicate_count += 1
+                
+                # 即使是重复包，如果属于当前正在请求的重传窗口，也打印日志，方便观察重传流是否到达
+                idx = self.image_instance._retransmit_window_idx
+                windows = self.image_instance._retransmit_windows
+                if windows and idx < len(windows):
+                    start, end, _ = windows[idx]
+                    if start <= packet_id <= end:
+                        print(f"[smart_retransmission] Received requested packet {packet_id} (DUPLICATE) in window [{start}, {end}]")
+
                 _, existing_data = self.image_instance.packet_cache[packet_id]
                 if existing_data == buff:
                     # print(
@@ -398,8 +434,9 @@ class ImageReceiver:
                     # print("[INFO] (dup) _has_sent_start is False, re-sending start (mark=0) command!")
                     self._send_start_received()
                     self._has_sent_start = True
-                # 重复包也要重置定时器，因为数据流仍在正常传输
+                # 重复包也要重置定时器，并驱动窗口推进检测
                 self._start_timeout_timer()
+                self._advance_retransmit_window_if_needed(packet_id)
                 return
 
             # 存储数据包
@@ -417,13 +454,12 @@ class ImageReceiver:
             if len(self.image_instance.packet_cache) >= self.image_instance.total_packets:
                 # 验证是否真的收齐了所有包
                 if self._verify_all_packets_received():
-                    with self._lock:
-                        idx = self.image_instance._retransmit_window_idx
-                        windows = self.image_instance._retransmit_windows
-                        if windows and idx < len(windows):
-                            start, end, _ = windows[idx]
-                            if start <= packet_id <= end:
-                                print(f"[smart_retransmission] Received requested packet {packet_id} in window [{start}, {end}] (Final packet!)")
+                    idx = self.image_instance._retransmit_window_idx
+                    windows = self.image_instance._retransmit_windows
+                    if windows and idx < len(windows):
+                        start, end, _ = windows[idx]
+                        if start <= packet_id <= end:
+                            print(f"[smart_retransmission] Received requested packet {packet_id} in window [{start}, {end}] (Final packet!)")
 
                     print(f"All {self.image_instance.total_packets} packets received, assembling image...")
                     self._print_transfer_stats()
@@ -433,13 +469,12 @@ class ImageReceiver:
                 # 启动/重置超时检测定时器（后备机制）
                 self._start_timeout_timer()
                 # 事件驱动推进重发窗口（实现算法第5条"立即切换到下一区间"的语义）
-                with self._lock:
-                    idx = self.image_instance._retransmit_window_idx
-                    windows = self.image_instance._retransmit_windows
-                    if windows and idx < len(windows):
-                        start, end, _ = windows[idx]
-                        if start <= packet_id <= end:
-                            print(f"[smart_retransmission] Received requested packet {packet_id} in window [{start}, {end}]")
+                idx = self.image_instance._retransmit_window_idx
+                windows = self.image_instance._retransmit_windows
+                if windows and idx < len(windows):
+                    start, end, _ = windows[idx]
+                    if start <= packet_id <= end:
+                        print(f"[smart_retransmission] Received requested packet {packet_id} in window [{start}, {end}]")
 
                 self._advance_retransmit_window_if_needed(packet_id)
 
@@ -477,6 +512,7 @@ class ImageReceiver:
 
             # 还有丢包，使用智能重发窗口算法替代原有重传逻辑
             print(f"EOF received, missing packets, using smart retransmission.")
+            self.image_instance.eof_triggered_retransmit_count += 1
             self.smart_retransmission()
             # 重新启动超时定时器
             self._start_timeout_timer()
@@ -667,14 +703,15 @@ class ImageReceiver:
         """发送从指定包开始重传的指令（调用时已持有锁）"""
         cc = self.airplane.s.ss
         (order_count, cmd) = self._send_transfer_pack(pack_id)
-        print("_re_transfer_pack", order_count, cmd.hex(' '))
-        # 生成唯一的命令ID用于取消重发
-        cmd_id = self._generate_cmd_id()
         # 记录待取消的命令ID和期望收到的第一个包（即请求重传的pack_id）
         if self.image_instance is not None:
+            # 生成唯一的命令ID用于取消重发
+            cmd_id = self._generate_cmd_id()
             self.image_instance.pending_transfer_cmd_id = cmd_id
             self.image_instance.expected_first_packet = pack_id
-        cc.sendCommand(cmd, max_retry=2, cmd_id_for_clean=cmd_id)
+            print(f"[smart_retransmission] _re_transfer_pack for image_id={order_count}, "
+                  f"start_packet={pack_id}, cmd_id={cmd_id} (hex: {cmd.hex(' ')})")
+            cc.sendCommand(cmd, max_retry=3, cmd_id_for_clean=cmd_id)
         pass
 
     def _clean_remote_image(self):
@@ -896,6 +933,8 @@ class ImageReceiver:
         time_since_request = now - self.image_instance._current_request_time
         if time_since_request < observation_period:
             # 还在观察期内，不轻易判定为流已越过
+            # 如果收到的包大于窗口结束，可能是旧流残余。为了调试，可以考虑在特定条件下打印
+            # print(f"[smart_retransmission] Packet {packet_id} > end {end} but in observation period ({time_since_request:.2f}s). Ignoring.")
             return
 
         # 超过观察期且 packet_id >= end，认为重传流已越过当前窗口
@@ -910,15 +949,16 @@ class ImageReceiver:
             return
 
         print(
-            f"[smart_retransmission] Passed window [{start}, {end}] "
-            f"but still missing {missing_in_window[:20]}. "
+            f"[smart_retransmission] Observed packet_id={packet_id} passed window [{start}, {end}] "
+            f"but {len(missing_in_window)} packets still missing. "
             f"Wait time {time_since_request:.2f}s > {observation_period}s. "
-            f"Retrying CURRENT window instead of advancing! (Requested start: {start})"
+            f"Retrying CURRENT window! (First missing: {missing_in_window[0]})"
         )
         # 关键修复：不再盲目推进，而是重试当前窗口
         self.image_instance.retransmit_request_count += 1
+        self.image_instance.window_triggered_retransmit_count += 1
         self.image_instance._current_request_time = now
-        self._re_transfer_pack(start)
+        self._re_transfer_pack(missing_in_window[0])
 
     def _move_to_next_window(self, current_idx: int):
         """推进状态机到下一个未完成的窗口"""
@@ -1028,7 +1068,7 @@ class ImageReceiver:
               f"Total missing: {len(controller.missing_ids)}")
 
         self.image_instance.retransmit_request_count += 1
-        self.image_instance.window_triggered_retransmit_count += 1
+        # self.image_instance.window_triggered_retransmit_count += 1 # 移到具体触发处
         self.image_instance._current_request_start_packet = start
         self.image_instance._current_request_time = now
         self._re_transfer_pack(start)
