@@ -27,8 +27,7 @@ class AirplaneController(object):
             user_receive_callback: typing.Optional[typing.Callable[[bytes], None]] = None,
             user_progress_callback: typing.Optional[typing.Callable[[int, int], None]] = None,
     ):
-        self.image_receiver.send_cap_image(user_receive_callback, user_progress_callback)
-        pass
+        return self.image_receiver.send_cap_image(user_receive_callback, user_progress_callback)
 
     def get_image_transfer_progress(self):
         return self.image_receiver.get_transfer_progress()
