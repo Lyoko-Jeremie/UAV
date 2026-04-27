@@ -109,6 +109,8 @@ class ImageInfo:
     # 上次发送重传请求时的 first_missing_packet 值，用于冷却控制
     # -1 表示尚未发送过重传请求
     last_retransmit_at_packet: int = -1
+    # 上次发送重传请求的时间，用于避免同一个缺包点被短时间重复请求
+    last_retransmit_time: float = 0.0
     # 最后收到块的时间，用于超时检测
     last_packet_time: float = dataclasses.field(default_factory=time.time)
     # 传输开始时间，用于总超时检测
@@ -576,11 +578,7 @@ class ImageReceiver:
             first_missing = self._calculate_first_missing_packet()
 
             if first_missing < self.image_instance.total_packets:
-                # print(
-                #     f"[WARNING] Packet timeout! first_missing={first_missing}, "
-                #     f"progress={len(self.image_instance.packet_cache)}/"
-                #     f"{self.image_instance.total_packets}. Using smart retransmission."
-                # )
+                self.image_instance.timeout_triggered_retransmit_count += 1
                 self.smart_retransmission()
                 self._start_timeout_timer()
             else:
@@ -827,29 +825,35 @@ class ImageReceiver:
 
     def _advance_retransmit_window_if_needed(self, packet_id: int):
         """
-        在接收到新包后，检查当前重发窗口是否已完成，若完成则立即推进到下一个未填充窗口。
+        在接收到新包后，检查当前重发窗口是否应推进到下一个窗口。
 
-        实现算法说明第5条"实时监控 cur_max_id / 立即切换到下一区间"的语义，
-        但以事件驱动方式替代原来的自旋等待，彻底避免持锁死锁。
+        这里采用“流已越过窗口就推进”的策略：
+          - 如果当前窗口已补齐，推进；
+          - 如果 packet_id >= 当前窗口 end，说明当前重传流已经越过该窗口，也推进；
+          - 未补齐的包不会丢失跟踪，下一轮 timeout / EOF 会重新计算 missing list 再补。
 
-        触发条件（对应原算法第5c条）：
-          - packet_id >= window.end   （收到了窗口末尾或之后的包）
-          - 或窗口内所有包已全部收到
-
-        （调用时已持有锁）
+        这样可以避免一直卡在第一个顽固缺包上，导致后面的缺包没有机会被针对性请求。
         """
         if self.image_instance is None:
             return
+
         windows = self.image_instance._retransmit_windows
         if not windows:
             return
+
         idx = self.image_instance._retransmit_window_idx
         if idx >= len(windows):
             return
 
         start, end, W = windows[idx]
 
-        if packet_id >= end and not self._is_window_filled(start, end):
+        window_done = self._is_window_filled(start, end)
+        stream_passed_window = packet_id >= end
+
+        if not window_done and not stream_passed_window:
+            return
+
+        if stream_passed_window and not window_done:
             missing_in_window = [
                 pid for pid in range(start, end + 1)
                 if pid not in self.image_instance.packet_cache
@@ -857,36 +861,33 @@ class ImageReceiver:
             print(
                 f"[smart_retransmission] Passed window [{start}, {end}] "
                 f"but still missing {missing_in_window[:20]}. "
-                f"Keep waiting/retry current window."
+                f"Advancing anyway; it will be retried in the next missing scan."
             )
 
-        # 只有窗口内所有缺失包真的收到，才认为当前窗口完成。
-        # 不能用 packet_id >= end 判断完成，因为重传流中仍可能再次丢失 start/end 包；
-        # 收到 end 之后的包，只能说明数据流已经越过该位置，不能证明窗口已补齐。
-        window_done = self._is_window_filled(start, end)
-        if not window_done:
-            return
-
-        # 推进：跳过已填充的窗口，找到下一个真正有缺包的窗口
         idx += 1
         while idx < len(windows):
             ns, ne, _ = windows[idx]
             if not self._is_window_filled(ns, ne):
                 break
-            idx += 1  # 该窗口已被顺带填充，跳过
+            idx += 1
 
         self.image_instance._retransmit_window_idx = idx
 
         if idx < len(windows):
             ns, ne, nW = windows[idx]
-            print(f"[smart_retransmission] Window [{idx - 1}] done. "
-                  f"Advancing to window [{idx}/{len(windows) - 1}]: [{ns}, {ne}] "
-                  f"(gap_size={ne - ns + 1}, W={nW})")
+            print(
+                f"[smart_retransmission] Advancing to window "
+                f"[{idx}/{len(windows) - 1}]: [{ns}, {ne}] "
+                f"(gap_size={ne - ns + 1}, W={nW})"
+            )
+            self.image_instance.retransmit_request_count += 1
+            self.image_instance.window_triggered_retransmit_count += 1
             self._re_transfer_pack(ns)
         else:
-            # 所有窗口请求均已发出，等待 on_receive_image_packet_data 检测最终收齐
-            print(f"[smart_retransmission] All {len(windows)} window(s) processed. "
-                  f"Waiting for final assembly.")
+            print(
+                f"[smart_retransmission] All {len(windows)} window(s) requested once. "
+                f"Waiting for EOF/timeout to rescan remaining missing packets."
+            )
 
     def smart_retransmission(self, alpha=5, W_max=32):
         """
@@ -942,10 +943,28 @@ class ImageReceiver:
             return
 
         start, end, W = windows[idx]
+
+        now = time.time()
+        if (
+                self.image_instance.last_retransmit_at_packet == start
+                and now - self.image_instance.last_retransmit_time < 0.5
+        ):
+            print(
+                f"[smart_retransmission] Skip duplicated retransmit request for packet {start} "
+                f"within cooldown."
+            )
+            return
+
+        self.image_instance.last_retransmit_at_packet = start
+        self.image_instance.last_retransmit_time = now
+
         print(f"[smart_retransmission] {len(windows)} missing window(s). "
               f"Starting window [{idx}/{len(windows) - 1}]: [{start}, {end}] "
               f"(gap_size={end - start + 1}, W={W}). "
               f"Total missing: {len(controller.missing_ids)}")
+
+        self.image_instance.retransmit_request_count += 1
+        self.image_instance.window_triggered_retransmit_count += 1
         self._re_transfer_pack(start)
         # 立即返回，不自旋等待。
         # 后续窗口由 _advance_retransmit_window_if_needed() 在收包事件中驱动推进。
