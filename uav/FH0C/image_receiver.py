@@ -199,7 +199,7 @@ class ImageReceiver:
         order_count, cmd = self._send_transfer_pack(retransmit_from)
         print(f"[image_transfer] retransmit from={retransmit_from} (first_lost={lost_mark}), "
               f"order_count={order_count}, cmd={cmd.hex(' ')}")
-        cc.sendCommand(cmd, max_retry=2)
+        cc.sendCommand(cmd, max_retry=1)
 
     def _clean_remote_image(self):
         """发送 mark=0xFFFFFFFF，通知无人机清除图像缓存。"""
@@ -252,7 +252,7 @@ class ImageReceiver:
             received = len(self.image_instance.packet_cache)
             total = self.image_instance.total_packets
             print(f"[image_transfer] Packet timeout, lost_mark={lost_mark}, "
-                  f"received={received}/{total}. Waiting for remote auto-resend.")
+                  f"received={received}/{total}.")
             # 发送重传指令，从丢失包的前一个包开始
             self._request_retransmit(lost_mark)
             # 继续等待远端重传
