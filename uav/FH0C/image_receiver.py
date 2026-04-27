@@ -116,7 +116,7 @@ class ImageReceiver:
     # 包重传间隔（秒），每隔此时间发送一次从头重发指令
     PACKET_RETRANSMIT_INTERVAL: float = 5.0
     # 总超时时间（秒），超过此时间强制结束并组装
-    TOTAL_TIMEOUT: float = 15.0
+    TOTAL_TIMEOUT: float = 20.0
     # 接收完成的图片表
     # count_cmd_id_from_airplane ImageInfo
     received_image_cache: dict[int, ImageInfo]
@@ -439,7 +439,8 @@ class ImageReceiver:
                 return
 
             # 未达到总超时，发送从头重传指令（mark=0）
-            print(f"[INFO] Timeout ({elapsed:.1f}s): Sending re-transfer from start (mark=0) to keep remote alive.")
+            print(f"[INFO] Timeout ({elapsed:.1f}s): Sending re-transfer from start (mark=0) to keep remote alive. "
+                  f"Progress: {len(self.image_instance.packet_cache)}/{self.image_instance.total_packets}")
             self.image_instance.timeout_triggered_retransmit_count += 1
             
             # 手动构造并发送指令。
@@ -491,9 +492,8 @@ class ImageReceiver:
     def _send_start_received(self):
         """发送开始传输指令（调用时已持有锁）"""
         with self._lock:
-            if hasattr(self, '_has_sent_start') and self._has_sent_start:
-                # print("[WARNING] _send_start_received() called more than once! 忽略本次 mark=0 指令。")
-                return
+            # 去掉 check _has_sent_start 拦截，由外部控制是否需要重发。
+            # 但为了保留原本“只发一次”的某些语义，我们在这里还是记录一下
             self._has_sent_start = True
             cc = self.airplane.s.ss
             (order_count, cmd) = self._send_transfer_pack(0x00_00_00_00)
@@ -575,6 +575,7 @@ class ImageReceiver:
             self.image_instance = ImageInfo(
                 count_cmd_id=order_count,
             )
+            self._has_sent_start = False
 
             # 然后发送命令
             cc.sendCommand(cmd)
