@@ -223,11 +223,11 @@ class ImageReceiver:
             cc.cleanSendRetry(info._pending_cmd_id)
             info._pending_cmd_id = None
 
-        order_count, cmd = self._send_transfer_pack(lost_mark)
+        order_count, cmd = self._send_transfer_pack(max(0, lost_mark - 1))
         cmd_id = self._generate_cmd_id()
         info._pending_cmd_id = cmd_id
-        print(f"[image_transfer] retransmit mark={lost_mark}, order_count={order_count}, cmd={cmd.hex(' ')}")
-        cc.sendCommand(cmd, max_retry=2, cmd_id_for_clean=cmd_id)
+        print(f"\n[image_transfer] retransmit mark={lost_mark}, order_count={order_count}, cmd={cmd.hex(' ')}")
+        cc.sendCommand(cmd, max_retry=3, cmd_id_for_clean=cmd_id)
 
     def _clean_remote_image(self):
         """发送 mark=0xFFFFFFFF，通知无人机清除图像缓存。"""
@@ -361,6 +361,7 @@ class ImageReceiver:
             # 写入缓存
             self.image_instance.packet_cache[packet_id] = bytes(buff)
             self.image_instance.last_packet_time = time.time()
+            print(f".{packet_id}", end=" ")
 
             if self.user_progress_callback is not None:
                 self.user_progress_callback(
@@ -373,7 +374,7 @@ class ImageReceiver:
 
             if lost_mark >= self.image_instance.total_packets:
                 # 全部收完（对应 C++ lostMark == TRANSFER_COMPLETE）
-                print(f"[image_transfer] All {self.image_instance.total_packets} packets received. Assembling.")
+                print(f"\n[image_transfer] All {self.image_instance.total_packets} packets received. Assembling.")
                 self._assemble_image()
                 self._when_received_end()
                 return
