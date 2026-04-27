@@ -70,17 +70,14 @@ if typing.TYPE_CHECKING:
 #     → 若全部收完 → 组装图片 → 结束
 #     → 重置超时定时器
 #
-# on_receive_image_packet_data_eof() 收到 EOF 包（无人机发完一轮，≤5s 后停止）
+# on_receive_image_packet_data_eof() 收到 EOF 包（无人机发完一轮）
 #     → 输出 log
 #     → 若全收完 → 组装图片 → 结束
-#     → 否则 → 发送重传指令（远端收到后再次发送 ≤5s）→ 重置超时定时器
+#     → 否则 → 仅重置超时定时器，等待远端下一轮循环自动补包
 #
-# 超时(_on_packet_timeout, PACKET_TIMEOUT > 5s)
-#     → 若总超时(TOTAL_TIMEOUT) → 强制组装 → 结束
-#     → 否则 → 说明远端本轮已停止发送但未收到 EOF → 发送重传指令 → 重置定时器
-#
-# 重传循环节奏：远端发送(≤5s) + 包超时检测(PACKET_TIMEOUT≈6s) ≈ 11s/轮
-# TOTAL_TIMEOUT=60s 约允许 5 轮重传尝试
+# 超时(_on_packet_timeout)
+#     → 若总超时 → 强制组装 → 结束
+#     → 否则 → 重置超时定时器，继续等待
 
 
 @dataclasses.dataclass
@@ -97,10 +94,6 @@ class ImageInfo:
     last_packet_time: float = dataclasses.field(default_factory=time.time)
     # 传输开始时间（用于总超时）
     start_time: float = dataclasses.field(default_factory=time.time)
-    # 上次重传请求的 mark 值（用于冷却防抖）
-    _last_retransmit_mark: int = -1
-    # 上次重传请求的时间戳
-    _last_retransmit_time: float = 0.0
 
 
 class ImageReceiver:
@@ -109,18 +102,10 @@ class ImageReceiver:
     image_instance: ImageInfo | None = None
     # 超时检测定时器
     _timeout_timer: typing.Optional[threading.Timer]
-    # 包超时时间（秒）：连续此时间内无包到达则认为远端本轮发送已结束。
-    # 远端每轮发送最多持续 5 秒后自动停止，之后不再主动发包；
-    # 因此本值应 > 5s 以确保远端真正停止后才触发超时检测，
-    # 而不是在两包间的短暂间隙误判。
-    PACKET_TIMEOUT: float = 6.0
-    # 总超时时间（秒）：超过此时间强制结束。
-    # 每次重传循环 = 远端发送(≤5s) + 包超时检测(PACKET_TIMEOUT) ≈ 11s；
-    # 设为 60s 允许约 5 次完整重传循环。
-    TOTAL_TIMEOUT: float = 60.0
-    # 重传请求冷却时间（秒）：同一 mark 在此时间内不重复发送，
-    # 防止在远端尚未完成本轮发送时重复催发。
-    RETRANSMIT_COOLDOWN: float = 5.5
+    # 包超时时间（秒）：连续此时间内无包到达则检查状态
+    PACKET_TIMEOUT: float = 1.5
+    # 总超时时间（秒）：超过此时间强制结束
+    TOTAL_TIMEOUT: float = 15.0
     # 接收完成的图片表  {count_cmd_id_from_airplane: ImageInfo}
     received_image_cache: dict[int, ImageInfo]
     # 临界区锁
@@ -187,29 +172,6 @@ class ImageReceiver:
         print(f"[image_transfer] send mark=0 (start), order_count={order_count}, cmd={cmd.hex(' ')}")
         cc.sendCommand(cmd, max_retry=2)
 
-    def _request_retransmit(self, lost_mark: int, force: bool = False):
-        """
-        发送重传请求控制帧。
-        重传起始位置 = max(0, lost_mark - 1)，即从最小丢失包的前一个包开始重传。
-        实现冷却防抖：同一 mark 在 RETRANSMIT_COOLDOWN 秒内不重复发送。
-        force=True 时跳过冷却限制，立即发送（用于包超时强制触发场景）。
-        """
-        if self.image_instance is None:
-            return
-        retransmit_from = max(0, lost_mark - 1)
-        now = time.time()
-        info = self.image_instance
-        if not force and (info._last_retransmit_mark == retransmit_from and
-                now - info._last_retransmit_time < self.RETRANSMIT_COOLDOWN):
-            return
-        info._last_retransmit_mark = retransmit_from
-        info._last_retransmit_time = now
-        cc = self.airplane.s.ss
-        order_count, cmd = self._send_transfer_pack(retransmit_from)
-        print(f"[image_transfer] retransmit from={retransmit_from} (first_lost={lost_mark}), "
-              f"order_count={order_count}, cmd={cmd.hex(' ')}")
-        cc.sendCommand(cmd, max_retry=1)
-
     def _clean_remote_image(self):
         """发送 mark=0xFFFFFFFF，通知无人机清除图像缓存。"""
         cc = self.airplane.s.ss
@@ -261,10 +223,8 @@ class ImageReceiver:
             received = len(self.image_instance.packet_cache)
             total = self.image_instance.total_packets
             print(f"[image_transfer] Packet timeout, lost_mark={lost_mark}, "
-                  f"received={received}/{total}.")
-            # 包超时时强制发送重传指令（忽略冷却），从丢失包的前一个包开始
-            self._request_retransmit(lost_mark, force=True)
-            # 继续等待远端重传
+                  f"received={received}/{total}. Waiting for remote auto-resend.")
+            # 不主动重传，继续等待远端自动循环
             self._start_timeout_timer()
 
     # ------------------------------------------------------------------
@@ -336,7 +296,6 @@ class ImageReceiver:
             # 写入缓存
             self.image_instance.packet_cache[packet_id] = bytes(buff)
             self.image_instance.last_packet_time = time.time()
-            print(f".{packet_id}", end=" ")
 
             received = len(self.image_instance.packet_cache)
             total = self.image_instance.total_packets
@@ -346,22 +305,16 @@ class ImageReceiver:
 
             # 收到最后一个序号的包时输出 log
             if packet_id == total - 1:
-                print(f"\n[image_transfer] Received last packet (id={packet_id}), "
+                print(f"[image_transfer] Received last packet (id={packet_id}), "
                       f"received={received}/{total}.")
 
             # 检查是否全部收完
             lost_mark = self._get_lost_mark()
             if lost_mark >= total:
-                print(f"\n[image_transfer] All {total} packets received. Assembling.")
+                print(f"[image_transfer] All {total} packets received. Assembling.")
                 self._assemble_image()
                 self._when_received_end()
                 return
-
-            # 收到最后序号包但数据不完整时，请求重传
-            if packet_id == total - 1:
-                print(f"\n[image_transfer] Last packet received but data incomplete, "
-                      f"requesting retransmit from lost_mark={lost_mark}.")
-                self._request_retransmit(lost_mark)
 
             # 重置超时定时器，继续等待
             self._start_timeout_timer()
@@ -391,9 +344,7 @@ class ImageReceiver:
                 self._when_received_end()
                 return
 
-            # 未收完，发送重传指令，等待远端从指定位置继续发送
-            print(f"[image_transfer] EOF: data incomplete, requesting retransmit from lost_mark={lost_mark}.")
-            self._request_retransmit(lost_mark)
+            # 未收完，等待远端自动循环继续发送
             self._start_timeout_timer()
 
     # ------------------------------------------------------------------
