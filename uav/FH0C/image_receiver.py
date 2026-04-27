@@ -367,9 +367,9 @@ class ImageReceiver:
                 self.image_instance.pending_transfer_cmd_id = None
                 self.image_instance.expected_first_packet = None
 
-            print(f"on_receive_image_packet_data: size_len={size_len}, packet_id={packet_id}, "
-                  f"total_packets={self.image_instance.total_packets}, cache_size={len(self.image_instance.packet_cache)}, "
-                  f"buff_len={len(buff)}")
+            # print(f"on_receive_image_packet_data: size_len={size_len}, packet_id={packet_id}, "
+            #       f"total_packets={self.image_instance.total_packets}, cache_size={len(self.image_instance.packet_cache)}, "
+            #       f"buff_len={len(buff)}")
 
             # 更新最后收到包的时间
             self.image_instance.last_packet_time = time.time()
@@ -381,10 +381,12 @@ class ImageReceiver:
                 self.image_instance.duplicate_count += 1
                 _, existing_data = self.image_instance.packet_cache[packet_id]
                 if existing_data == buff:
-                    print(
-                        f"Duplicate packet {packet_id} with same data, ignored (dup_count={self.image_instance.duplicate_count})")
+                    # print(
+                    #     f"Duplicate packet {packet_id} with same data, ignored (dup_count={self.image_instance.duplicate_count})")
+                    pass
                 else:
-                    print(f"Duplicate packet {packet_id} with different data! Keeping original.")
+                    # print(f"Duplicate packet {packet_id} with different data! Keeping original.")
+                    pass
                 # 再次检查 _has_sent_start，防止极端情况下未发
                 if not self._has_sent_start:
                     print("[INFO] (dup) _has_sent_start is False, re-sending start (mark=0) command!")
@@ -400,9 +402,10 @@ class ImageReceiver:
             if self.user_progress_callback is not None:
                 self.user_progress_callback(len(self.image_instance.packet_cache), self.image_instance.total_packets)
 
-            print(f"Received packet {packet_id}/{self.image_instance.total_packets - 1}, "
-                  f"cache size: {len(self.image_instance.packet_cache)}, "
-                  f"stats: recv={self.image_instance.total_received_count}, dup={self.image_instance.duplicate_count}")
+            # print(f"Received packet {packet_id}/{self.image_instance.total_packets - 1}, "
+            #       f"cache size: {len(self.image_instance.packet_cache)}, "
+            #       f"stats: recv={self.image_instance.total_received_count}, dup={self.image_instance.duplicate_count}")
+            print(f".{packet_id}", end=" ")
 
 
             # 检查是否已接收完所有包
@@ -640,7 +643,7 @@ class ImageReceiver:
         if self.image_instance is not None:
             self.image_instance.pending_transfer_cmd_id = cmd_id
             self.image_instance.expected_first_packet = pack_id
-        cc.sendCommand(cmd, max_retry=2, cmd_id_for_clean=cmd_id)
+        cc.sendCommand(cmd, max_retry=6, cmd_id_for_clean=cmd_id)
         pass
 
     def _clean_remote_image(self):
@@ -648,7 +651,7 @@ class ImageReceiver:
         cc = self.airplane.s.ss
         (order_count, cmd) = self._send_transfer_pack(0xFF_FF_FF_FF)
         print("_clean_remote_image", order_count, cmd.hex(' '))
-        cc.sendCommand(cmd, max_retry=3)
+        cc.sendCommand(cmd, max_retry=5)
         pass
 
     def _send_transfer_pack(self, pack_id: int):
