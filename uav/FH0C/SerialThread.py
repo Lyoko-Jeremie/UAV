@@ -54,7 +54,7 @@ def task_write(thead_local: ThreadLocal):
 
     :param thead_local: 线程本地数据对象，包含串口、命令队列等共享资源
     """
-    print("task_write")
+    # print("task_write")
     while True:
         sleep(0.1)
         try:
@@ -66,17 +66,17 @@ def task_write(thead_local: ThreadLocal):
         try:
             # 从命令队列中取出新命令
             d = thead_local.q.get(block=False, timeout=-1)
-            print("task_write d:", (d[0], d[1].hex(' ')))
+            # print("task_write d:", (d[0], d[1].hex(' ')))
             if isinstance(d, tuple):
                 if d[0] == QueueSignal.CLEAN:
                     # 收到 CLEAN 信号：若消息ID匹配，则清除当前待发送命令
-                    print("if d[0] == QueueSignal.CLEAN")
+                    # print("if d[0] == QueueSignal.CLEAN")
                     if len(d) > 3 and d[3] is not None and thead_local.latest_cmd_id == d[3]:
                         thead_local.latest_cmd = None
                     pass
                 elif d[0] == QueueSignal.CMD and d[1] is not None and len(d[1]) > 0:
                     # 收到 CMD 信号：更新待发送命令及相关参数
-                    print("task_write Tuple:", (d[0], d[1].hex(' ')))
+                    # print("task_write Tuple:", (d[0], d[1].hex(' ')))
                     thead_local.latest_cmd = d[1]
                     thead_local.latest_cmd_send_count = 0
                     if len(d) > 2 and d[2] is not None:
@@ -87,7 +87,7 @@ def task_write(thead_local: ThreadLocal):
                         thead_local.latest_cmd_id = d[3]
                     else:
                         thead_local.latest_cmd_id = None
-                    print("thead_local", thead_local)
+                    # print("thead_local", thead_local)
                 pass
         except Empty:
             pass
@@ -101,14 +101,14 @@ def task_write(thead_local: ThreadLocal):
             thead_local.latest_cmd_send_count += 1
             if thead_local.latest_cmd_send_count_limit is not None and thead_local.latest_cmd_send_count > thead_local.latest_cmd_send_count_limit:
                 # 已达到最大发送次数，清除当前命令
-                print("task_write: cmd send count limit reached, clean latest_cmd")
+                # print("task_write: cmd send count limit reached, clean latest_cmd")
                 thead_local.latest_cmd = None
                 thead_local.latest_cmd_id = None
                 thead_local.latest_cmd_send_count_limit = None
                 thead_local.latest_cmd_send_count = 0
                 pass
         pass
-    print("task_write done.")
+    # print("task_write done.")
     pass
 
 
