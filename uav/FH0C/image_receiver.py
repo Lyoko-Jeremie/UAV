@@ -292,8 +292,8 @@ class ImageReceiver:
             origin_data: bytearray,
     ):
         """接收到无人机拍照回传的图片信息包，包含图片的总大小和数据包数量等信息"""
-        print(f"on_receive_image_pack_info: fly_id={_fly_id}, photo_count_cmd_id={photo_count_cmd_id}, "
-              f"total_size={total_size}, data_type={data_type}")
+        # print(f"on_receive_image_pack_info: fly_id={_fly_id}, photo_count_cmd_id={photo_count_cmd_id}, "
+        #       f"total_size={total_size}, data_type={data_type}")
         if data_type != 0:
             # skip none-image data
             return
@@ -313,8 +313,8 @@ class ImageReceiver:
             self._send_start_received()
             # 启动超时检测定时器，防止第一个数据包丢失或无人机无响应
             self._start_timeout_timer()
-            print(
-                f"Received image info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
+            # print(
+            #     f"Received image info: photo_count_cmd_id={photo_count_cmd_id}, total_size={total_size}, total_packets={total_packets}")
 
 
     def on_receive_image_packet_data(
@@ -343,13 +343,13 @@ class ImageReceiver:
             # 原子检查-设置-发送，防止并发下多次补发
             if not self._has_sent_start:
                 self._has_sent_start = True
-                print("[INFO] _has_sent_start is False, re-sending start (mark=0) command!")
+                # print("[INFO] _has_sent_start is False, re-sending start (mark=0) command!")
                 self._send_start_received()
 
             # 检查 packet_id 是否在有效范围内
             if packet_id >= self.image_instance.total_packets:
-                print(
-                    f"Warning: Received invalid packet_id={packet_id}, max valid={self.image_instance.total_packets - 1}")
+                # print(
+                #     f"Warning: Received invalid packet_id={packet_id}, max valid={self.image_instance.total_packets - 1}")
                 return
 
             # 统计：总收到包数量+1
@@ -361,15 +361,15 @@ class ImageReceiver:
                     packet_id == self.image_instance.expected_first_packet):
                 cc = self.airplane.s.ss
                 cc.cleanSendRetry(self.image_instance.pending_transfer_cmd_id)
-                print(f"cleanSendRetry called for cmd_id={self.image_instance.pending_transfer_cmd_id}, "
-                      f"expected_first_packet={self.image_instance.expected_first_packet}")
+                # print(f"cleanSendRetry called for cmd_id={self.image_instance.pending_transfer_cmd_id}, "
+                #       f"expected_first_packet={self.image_instance.expected_first_packet}")
                 # 清除待取消的命令ID
                 self.image_instance.pending_transfer_cmd_id = None
                 self.image_instance.expected_first_packet = None
 
-            print(f"on_receive_image_packet_data: size_len={size_len}, packet_id={packet_id}, "
-                  f"total_packets={self.image_instance.total_packets}, cache_size={len(self.image_instance.packet_cache)}, "
-                  f"buff_len={len(buff)}")
+            # print(f"on_receive_image_packet_data: size_len={size_len}, packet_id={packet_id}, "
+            #       f"total_packets={self.image_instance.total_packets}, cache_size={len(self.image_instance.packet_cache)}, "
+            #       f"buff_len={len(buff)}")
 
             # 更新最后收到包的时间
             self.image_instance.last_packet_time = time.time()
@@ -381,13 +381,15 @@ class ImageReceiver:
                 self.image_instance.duplicate_count += 1
                 _, existing_data = self.image_instance.packet_cache[packet_id]
                 if existing_data == buff:
-                    print(
-                        f"Duplicate packet {packet_id} with same data, ignored (dup_count={self.image_instance.duplicate_count})")
+                    # print(
+                    #     f"Duplicate packet {packet_id} with same data, ignored (dup_count={self.image_instance.duplicate_count})")
+                    pass
                 else:
-                    print(f"Duplicate packet {packet_id} with different data! Keeping original.")
+                    # print(f"Duplicate packet {packet_id} with different data! Keeping original.")
+                    pass
                 # 再次检查 _has_sent_start，防止极端情况下未发
                 if not self._has_sent_start:
-                    print("[INFO] (dup) _has_sent_start is False, re-sending start (mark=0) command!")
+                    # print("[INFO] (dup) _has_sent_start is False, re-sending start (mark=0) command!")
                     self._send_start_received()
                     self._has_sent_start = True
                 # 重复包也要重置定时器，因为数据流仍在正常传输
@@ -400,9 +402,9 @@ class ImageReceiver:
             if self.user_progress_callback is not None:
                 self.user_progress_callback(len(self.image_instance.packet_cache), self.image_instance.total_packets)
 
-            print(f"Received packet {packet_id}/{self.image_instance.total_packets - 1}, "
-                  f"cache size: {len(self.image_instance.packet_cache)}, "
-                  f"stats: recv={self.image_instance.total_received_count}, dup={self.image_instance.duplicate_count}")
+            # print(f"Received packet {packet_id}/{self.image_instance.total_packets - 1}, "
+            #       f"cache size: {len(self.image_instance.packet_cache)}, "
+            #       f"stats: recv={self.image_instance.total_received_count}, dup={self.image_instance.duplicate_count}")
 
 
             # 检查是否已接收完所有包
@@ -435,9 +437,9 @@ class ImageReceiver:
             self._has_sent_start = True
 
             first_missing = self._calculate_first_missing_packet()
-            print(
-                f"EOF received. Progress: {len(self.image_instance.packet_cache)}/{self.image_instance.total_packets}, "
-                f"first_missing={first_missing}")
+            # print(
+            #     f"EOF received. Progress: {len(self.image_instance.packet_cache)}/{self.image_instance.total_packets}, "
+            #     f"first_missing={first_missing}")
 
             # 更新最后收到包的时间
             self.image_instance.last_packet_time = time.time()
@@ -445,14 +447,14 @@ class ImageReceiver:
             # 检查是否收齐所有包
             if first_missing >= self.image_instance.total_packets:
                 # 所有包已收到，组装图片并结束传输
-                print(f"EOF received, all {self.image_instance.total_packets} packets received successfully")
+                # print(f"EOF received, all {self.image_instance.total_packets} packets received successfully")
                 self._print_transfer_stats()
                 self._assemble_image()
                 self._when_received_end()
                 return
 
             # 还有丢包，使用智能重发窗口算法替代原有重传逻辑
-            print(f"EOF received, missing packets, using smart retransmission.")
+            # print(f"EOF received, missing packets, using smart retransmission.")
             self.smart_retransmission()
             # 重新启动超时定时器
             self._start_timeout_timer()
@@ -511,11 +513,11 @@ class ImageReceiver:
         if self.user_receive_callback:
             self.user_receive_callback(self.image_instance.image_data)
 
-        print(
-            f"[INFO] Image assembled! Size: {len(self.image_instance.image_data)} bytes, "
-            f"count_cmd_id: {self.image_instance.count_cmd_id_from_airplane}, "
-            f"complete: {missing_count == 0}."
-        )
+        # print(
+        #     f"[INFO] Image assembled! Size: {len(self.image_instance.image_data)} bytes, "
+        #     f"count_cmd_id: {self.image_instance.count_cmd_id_from_airplane}, "
+        #     f"complete: {missing_count == 0}."
+        # )
 
     def _start_timeout_timer(self):
         """启动或重置超时检测定时器（调用时已持有锁）"""
@@ -560,15 +562,15 @@ class ImageReceiver:
             first_missing = self._calculate_first_missing_packet()
 
             if first_missing < self.image_instance.total_packets:
-                print(
-                    f"[WARNING] Packet timeout! first_missing={first_missing}, "
-                    f"progress={len(self.image_instance.packet_cache)}/"
-                    f"{self.image_instance.total_packets}. Using smart retransmission."
-                )
+                # print(
+                #     f"[WARNING] Packet timeout! first_missing={first_missing}, "
+                #     f"progress={len(self.image_instance.packet_cache)}/"
+                #     f"{self.image_instance.total_packets}. Using smart retransmission."
+                # )
                 self.smart_retransmission()
                 self._start_timeout_timer()
             else:
-                print("[INFO] Timeout check: all packets received. Assembling image...")
+                # print("[INFO] Timeout check: all packets received. Assembling image...")
                 self._print_transfer_stats()
                 self._assemble_image()
                 self._when_received_end()
@@ -615,12 +617,12 @@ class ImageReceiver:
         """发送开始传输指令（调用时已持有锁）"""
         with self._lock:
             if hasattr(self, '_has_sent_start') and self._has_sent_start:
-                print("[WARNING] _send_start_received() called more than once! 忽略本次 mark=0 指令。")
+                # print("[WARNING] _send_start_received() called more than once! 忽略本次 mark=0 指令。")
                 return
             self._has_sent_start = True
             cc = self.airplane.s.ss
             (order_count, cmd) = self._send_transfer_pack(0x00_00_00_00)
-            print("_start_time_received", order_count, cmd.hex(' '))
+            # print("_start_time_received", order_count, cmd.hex(' '))
             # 生成唯一的命令ID用于取消重发
             cmd_id = self._generate_cmd_id()
             # 记录待取消的命令ID和期望收到的第一个包（第0包）
@@ -633,7 +635,7 @@ class ImageReceiver:
         """发送从指定包开始重传的指令（调用时已持有锁）"""
         cc = self.airplane.s.ss
         (order_count, cmd) = self._send_transfer_pack(pack_id)
-        print("_re_transfer_pack", order_count, cmd.hex(' '))
+        # print("_re_transfer_pack", order_count, cmd.hex(' '))
         # 生成唯一的命令ID用于取消重发
         cmd_id = self._generate_cmd_id()
         # 记录待取消的命令ID和期望收到的第一个包（即请求重传的pack_id）
@@ -647,7 +649,7 @@ class ImageReceiver:
         """在传输结束，全部接收完毕后，发送指令清除远端数据"""
         cc = self.airplane.s.ss
         (order_count, cmd) = self._send_transfer_pack(0xFF_FF_FF_FF)
-        print("_clean_remote_image", order_count, cmd.hex(' '))
+        # print("_clean_remote_image", order_count, cmd.hex(' '))
         cc.sendCommand(cmd, max_retry=3)
         pass
 
