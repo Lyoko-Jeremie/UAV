@@ -83,10 +83,10 @@ if typing.TYPE_CHECKING:
 
 @dataclasses.dataclass
 class ImageInfo:
-    count_cmd_id: int                    # 拍照指令的 order_count（本地生成）
+    count_cmd_id: int  # 拍照指令的 order_count（本地生成）
     count_cmd_id_from_airplane: int = 0  # 无人机回传的 count（用于 control frame）
-    total_size: int = 0                  # 图片总大小（字节）
-    total_packets: int = 0              # 总分包数 = ceil(total_size / 26)
+    total_size: int = 0  # 图片总大小（字节）
+    total_packets: int = 0  # 总分包数 = ceil(total_size / 26)
     # 已收到的数据包  {packet_index: data_bytes}
     packet_cache: dict[int, bytes] = dataclasses.field(default_factory=dict)
     # 组装完成的图片数据
@@ -178,8 +178,8 @@ class ImageReceiver:
             print("Warning: _send_transfer_pack called with no active image_instance")
         order_count = self.image_instance.count_cmd_id_from_airplane if self.image_instance else 0
         cmd = bytearray([0xBB, 0x08, 0x0A, 0x00])
-        cmd.extend(pack("<H", order_count))   # count: u16 LE
-        cmd.extend(pack("<I", pack_id))       # mark:  u32 LE
+        cmd.extend(pack("<H", order_count))  # count: u16 LE
+        cmd.extend(pack("<I", pack_id))  # mark:  u32 LE
         cmd += self._check_sum1(cmd)
         return order_count, cmd
 
