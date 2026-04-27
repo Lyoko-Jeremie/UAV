@@ -95,6 +95,10 @@ class ImageInfo:
     last_packet_time: float = dataclasses.field(default_factory=time.time)
     # 传输开始时间（用于总超时）
     start_time: float = dataclasses.field(default_factory=time.time)
+    # 上次重传请求的 mark 值（用于冷却防抖）
+    _last_retransmit_mark: int = -1
+    # 上次重传请求的时间戳
+    _last_retransmit_time: float = 0.0
 
 
 class ImageReceiver:
@@ -107,6 +111,8 @@ class ImageReceiver:
     PACKET_TIMEOUT: float = 1.5
     # 总超时时间（秒）：超过此时间强制结束
     TOTAL_TIMEOUT: float = 15.0
+    # 重传请求冷却时间（秒）：同一 mark 在此时间内不重复发送
+    RETRANSMIT_COOLDOWN: float = 0.3
     # 接收完成的图片表  {count_cmd_id_from_airplane: ImageInfo}
     received_image_cache: dict[int, ImageInfo]
     # 临界区锁
@@ -173,6 +179,28 @@ class ImageReceiver:
         print(f"[image_transfer] send mark=0 (start), order_count={order_count}, cmd={cmd.hex(' ')}")
         cc.sendCommand(cmd, max_retry=2)
 
+    def _request_retransmit(self, lost_mark: int):
+        """
+        发送重传请求控制帧。
+        重传起始位置 = max(0, lost_mark - 1)，即从最小丢失包的前一个包开始重传。
+        实现冷却防抖：同一 mark 在 RETRANSMIT_COOLDOWN 秒内不重复发送。
+        """
+        if self.image_instance is None:
+            return
+        retransmit_from = max(0, lost_mark - 1)
+        now = time.time()
+        info = self.image_instance
+        if (info._last_retransmit_mark == retransmit_from and
+                now - info._last_retransmit_time < self.RETRANSMIT_COOLDOWN):
+            return
+        info._last_retransmit_mark = retransmit_from
+        info._last_retransmit_time = now
+        cc = self.airplane.s.ss
+        order_count, cmd = self._send_transfer_pack(retransmit_from)
+        print(f"[image_transfer] retransmit from={retransmit_from} (first_lost={lost_mark}), "
+              f"order_count={order_count}, cmd={cmd.hex(' ')}")
+        cc.sendCommand(cmd, max_retry=2)
+
     def _clean_remote_image(self):
         """发送 mark=0xFFFFFFFF，通知无人机清除图像缓存。"""
         cc = self.airplane.s.ss
@@ -225,7 +253,9 @@ class ImageReceiver:
             total = self.image_instance.total_packets
             print(f"[image_transfer] Packet timeout, lost_mark={lost_mark}, "
                   f"received={received}/{total}. Waiting for remote auto-resend.")
-            # 不主动重传，继续等待远端自动循环
+            # 发送重传指令，从丢失包的前一个包开始
+            self._request_retransmit(lost_mark)
+            # 继续等待远端重传
             self._start_timeout_timer()
 
     # ------------------------------------------------------------------
@@ -317,6 +347,12 @@ class ImageReceiver:
                 self._when_received_end()
                 return
 
+            # 收到最后序号包但数据不完整时，请求重传
+            if packet_id == total - 1:
+                print(f"[image_transfer] Last packet received but data incomplete, "
+                      f"requesting retransmit from lost_mark={lost_mark}.")
+                self._request_retransmit(lost_mark)
+
             # 重置超时定时器，继续等待
             self._start_timeout_timer()
 
@@ -345,7 +381,9 @@ class ImageReceiver:
                 self._when_received_end()
                 return
 
-            # 未收完，等待远端自动循环继续发送
+            # 未收完，发送重传指令，等待远端从指定位置继续发送
+            print(f"[image_transfer] EOF: data incomplete, requesting retransmit from lost_mark={lost_mark}.")
+            self._request_retransmit(lost_mark)
             self._start_timeout_timer()
 
     # ------------------------------------------------------------------
