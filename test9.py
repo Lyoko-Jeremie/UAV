@@ -20,7 +20,7 @@ async def async_flight_mission(manager, airplane_id):
     #     future_mode=True,
     # )
 
-    a.mode(4)
+    a.mode(1)
     await asyncio.sleep(2)
 
     a.takeoff(100)
@@ -29,23 +29,27 @@ async def async_flight_mission(manager, airplane_id):
     # a.left(100)
     # await asyncio.sleep(2)
 
+    a.up(50)
+    await asyncio.sleep(2)
+
     # 触发抓图（底层必须是非阻塞的）
     a.cap_image(
         user_receive_callback=lambda img: handle_image(airplane_id, img),
         user_progress_callback=lambda p, t: None
     )
+    await asyncio.sleep(2)
 
     # 继续飞行，互不干扰
-    a.up(50)
-    await asyncio.sleep(2)
+    # a.up(50)
+    # await asyncio.sleep(2)
 
     manager.flush()
     # print(a.status)
     # print(a.get_state())
     # print(a.status.x, a.status.y, a.status.h)
 
-    # a.goto(a.status.x, 300, 300)
-    # await asyncio.sleep(3)
+    a.goto(200, 200, 150)
+    await asyncio.sleep(5)
 
     a.land()
     await asyncio.sleep(5)
