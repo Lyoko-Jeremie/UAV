@@ -249,7 +249,8 @@ class ImageReceiver:
     _timeout_timer: typing.Optional[threading.Timer]
     # ========== 滑动窗口配置 ==========
     # 包超时时间（秒）- 作为滑动窗口的后备机制，主要处理末尾包场景
-    PACKET_TIMEOUT: float = 3.0
+    # ★ 从 3.0 缩短到 1.5s：EOF 修复后已能即时触发重传，此值仅作兜底，缩短可减少错过无人机响应窗口的风险
+    PACKET_TIMEOUT: float = 1.5
     # 总超时时间（秒），超过此时间强制结束
     TOTAL_TIMEOUT: float = 15.0
     # 接收完成的图片表
@@ -702,6 +703,15 @@ class ImageReceiver:
     def _re_transfer_pack(self, pack_id: int):
         """发送从指定包开始重传的指令（调用时已持有锁）"""
         cc = self.airplane.s.ss
+
+        # ★ 关键修复：先取消旧的 pending 命令，避免多个重发命令同时运行导致无人机反复重置传输位置
+        if self.image_instance is not None and self.image_instance.pending_transfer_cmd_id is not None:
+            old_cmd_id = self.image_instance.pending_transfer_cmd_id
+            cc.cleanSendRetry(old_cmd_id)
+            # print(f"[smart_retransmission] Cancelled stale cmd_id={old_cmd_id} before issuing new retransmit request.")
+            self.image_instance.pending_transfer_cmd_id = None
+            self.image_instance.expected_first_packet = None
+
         (order_count, cmd) = self._send_transfer_pack(pack_id)
         # 记录待取消的命令ID和期望收到的第一个包（即请求重传的pack_id）
         if self.image_instance is not None:
@@ -711,7 +721,9 @@ class ImageReceiver:
             self.image_instance.expected_first_packet = pack_id
             print(f"[smart_retransmission] _re_transfer_pack for image_id={order_count}, "
                   f"start_packet={pack_id}, cmd_id={cmd_id} (hex: {cmd.hex(' ')})")
-            cc.sendCommand(cmd, max_retry=3, cmd_id_for_clean=cmd_id)
+            # ★ max_retry=3→6：发送 7 次（约 700ms），提升无人机收到命令的概率；
+            #   cleanSendRetry 在收到期望的第一个包时立即停止重试，避免持续干扰无人机传输位置
+            cc.sendCommand(cmd, max_retry=6, cmd_id_for_clean=cmd_id)
         pass
 
     def _clean_remote_image(self):
