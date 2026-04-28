@@ -216,3 +216,5 @@ doxygen-html/
 html/
 
 .idea/copilot.*
+
+/*.jpg
