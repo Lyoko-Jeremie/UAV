@@ -83,6 +83,41 @@ class Fh0cBase:
     imu: Tuple[int, int, int]  # s16 x,y,z
     high: int  # s16 高度
 
+# 
+# typedef struct 
+# {
+# 	u8 id;//编号
+# 	u8 vol;//电压(例如：37表示3.7V)
+# 	u8 ssi;//信号强度
+# 	u16 state;//传感器状态
+# 	u8 sysFlag; //6
+# 	
+# 	struct { u8 dist[4];} obs; //10
+# 	struct { s16 x,y,z; } imu; //16
+# 	struct { s16 x,y,h; } loc; //22
+# 	struct { s8 x,y,h;  } locErr; //25
+# 	
+# 	u8 orderCount;
+# }
+# flySensor_t;
+@dataclass
+class Fh0cNewBase:
+    id: int  # u8       编号
+    vol: int  # u8      电压*10 ， 37表示3.7V
+    ssi: int  # u8      信号强度
+    state: int  # u16   传感器状态
+    sysFlag: int  # u8  系统标志
+
+    obs_dist: Tuple[int, int, int, int]  # u8[4] 障碍物距离数组
+
+    imu: Tuple[int, int, int]  # s16 x,y,z IMU数据（横滚/俯仰/航向）
+
+    loc: Tuple[int, int, int]  # s16 x,y,h 位置坐标
+
+    locErr: Tuple[int, int, int]  # s8 x,y,h 位置误差
+
+    orderCount: int  # u8 命令计数
+
 
 @dataclass
 class BaseInfo:
