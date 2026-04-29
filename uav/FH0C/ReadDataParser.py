@@ -17,8 +17,8 @@ Header_Others_Hardware_Info = b'\xAA\x00\x00'
 Header_Others_MultiSetting_Info = b'\xAA\x00\x04'
 Header_Others_SingleSetting_Info = b'\xAA\x00\x05'
 
-Header_Fh0cBase = b'\xAA\x1b\x01'
-Header_Fh0cNewBase = b'\xAA\x19\x01'
+# Header_Fh0cBase = b'\xAA\x1b\x01'
+Header_Fh0cNewBase = b'\xAA\x1b\x01'
 
 Header_ImageReceiver_ImagePackInfo = b'\xAA\x0A\x0A'
 Header_ImageReceiver_ImagePackData = b'\xAA\x1D\x0B'
@@ -98,6 +98,8 @@ class Fh0cBase:
 # 	struct { s16 x,y,h; } loc; //22
 # 	struct { s8 x,y,h;  } locErr; //25
 #
+# 	u8 orderCount;
+#
 # }
 # flySensor_t;
 @dataclass
@@ -115,6 +117,8 @@ class Fh0cNewBase:
     loc: Tuple[int, int, int]  # s16 x,y,h 位置坐标
 
     locErr: Tuple[int, int, int]  # s8 x,y,h 位置误差
+
+    orderCount: int  # u8
 
 
 @dataclass
@@ -396,11 +400,11 @@ class ReadDataParser:
                 # print("Header_Sensor_info", 0, size, len(data), data)
                 self.sensor_info(data)
                 pass
-            elif header == Header_Fh0cBase:
-                data = self.read_buffer[0: size + 3]
-                # print("Header_Fh0cBase", 0, size, len(data), data)
-                self.fh0c_base(data)
-                pass
+            # elif header == Header_Fh0cBase:
+            #     data = self.read_buffer[0: size + 3]
+            #     # print("Header_Fh0cBase", 0, size, len(data), data)
+            #     self.fh0c_base(data)
+            #     pass
             elif header == Header_Fh0cNewBase:
                 data = self.read_buffer[0: size + 3]
                 # print("Header_Fh0cNewBase", 0, size, len(data), data)
@@ -441,6 +445,10 @@ class ReadDataParser:
                     # Header_Others_SingleSetting_Info like
                     self.single_setting_info(data)
                     pass
+                elif flag == 1:  # b'\x01':
+                    print(self.read_buffer[0: size + 3].hex(' '))
+                    print(self.read_buffer.hex(' '))
+                    pass
                 elif flag == 11:  # b'\x0B':
                     # 只有 1 byte 时，长度 4
                     # 完整包长 29 ， 完整包会被上面的匹配来捕获
@@ -456,6 +464,9 @@ class ReadDataParser:
                     # don't care
                     pass
                 pass
+
+            # print(self.read_buffer[0: size + 3].hex(' '))
+            # print(self.read_buffer.hex(' '))
 
             self.read_buffer = self.read_buffer[size + 3:]
             # if len(self.read_buffer) > size + 3:
@@ -583,11 +594,12 @@ class ReadDataParser:
             locErr=(unpack_from("!b", params, 23)[0],
                     unpack_from("!b", params, 24)[0],
                     unpack_from("!b", params, 25)[0]),
+            orderCount=unpack_from("!B", params, 26)[0],
         )
         with self.m_info_lock:
             self.m_fh0c_new_base = m_fh0c_new_base
             pass
-        # print("self._fh0c_new_base", m_fh0c_new_base)
+        print("self._fh0c_new_base", m_fh0c_new_base)
         pass
 
     def image_pack_info(self, data: bytearray):
