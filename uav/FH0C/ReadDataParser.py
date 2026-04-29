@@ -446,8 +446,8 @@ class ReadDataParser:
                     self.single_setting_info(data)
                     pass
                 elif flag == 1:  # b'\x01':
-                    print(self.read_buffer[0: size + 3].hex(' '))
-                    print(self.read_buffer.hex(' '))
+                    # print(self.read_buffer[0: size + 3].hex(' '))
+                    # print(self.read_buffer.hex(' '))
                     pass
                 elif flag == 11:  # b'\x0B':
                     # 只有 1 byte 时，长度 4
@@ -599,7 +599,7 @@ class ReadDataParser:
         with self.m_info_lock:
             self.m_fh0c_new_base = m_fh0c_new_base
             pass
-        print("self._fh0c_new_base", m_fh0c_new_base)
+        # print("self._fh0c_new_base", m_fh0c_new_base)
         pass
 
     def image_pack_info(self, data: bytearray):
