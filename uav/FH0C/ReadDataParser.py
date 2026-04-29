@@ -18,6 +18,7 @@ Header_Others_MultiSetting_Info = b'\xAA\x00\x04'
 Header_Others_SingleSetting_Info = b'\xAA\x00\x05'
 
 Header_Fh0cBase = b'\xAA\x1b\x01'
+Header_Fh0cNewBase = b'\xAA\x19\x01'
 
 Header_ImageReceiver_ImagePackInfo = b'\xAA\x0A\x0A'
 Header_ImageReceiver_ImagePackData = b'\xAA\x1D\x0B'
@@ -96,8 +97,7 @@ class Fh0cBase:
 # 	struct { s16 x,y,z; } imu; //16
 # 	struct { s16 x,y,h; } loc; //22
 # 	struct { s8 x,y,h;  } locErr; //25
-# 	
-# 	u8 orderCount;
+#
 # }
 # flySensor_t;
 @dataclass
@@ -115,8 +115,6 @@ class Fh0cNewBase:
     loc: Tuple[int, int, int]  # s16 x,y,h 位置坐标
 
     locErr: Tuple[int, int, int]  # s8 x,y,h 位置误差
-
-    orderCount: int  # u8 命令计数
 
 
 @dataclass
@@ -348,6 +346,7 @@ class ReadDataParser:
     m_base_info: BaseInfo = None
     m_sensor_info: SensorInfo = None
     m_fh0c_base: Fh0cBase = None
+    m_fh0c_new_base: Fh0cNewBase = None
     m_vision_sensor_info: VisionSensorInfo = None
     m_hardware_info: HardwareInfo = None
     m_multi_setting_info: MultiSettingInfo = None
@@ -401,6 +400,11 @@ class ReadDataParser:
                 data = self.read_buffer[0: size + 3]
                 # print("Header_Fh0cBase", 0, size, len(data), data)
                 self.fh0c_base(data)
+                pass
+            elif header == Header_Fh0cNewBase:
+                data = self.read_buffer[0: size + 3]
+                # print("Header_Fh0cNewBase", 0, size, len(data), data)
+                self.fh0c_new_base(data)
                 pass
             elif header == Header_ImageReceiver_ImagePackInfo:
                 data = self.read_buffer[0: size + 3]
@@ -556,6 +560,35 @@ class ReadDataParser:
         # print("self._fh0c_base", m_fh0c_base)
         # self._fh0c_base Fh0cBase(id=0, vol=41, ssi=100, state=21260, setting=255, mv_flag=255, mv_tagId=65535, mv_x0=-10, mv_y0=-1, mv_x1=114, mv_y1=-1, flow_qual=-91, flow_x=-1, flow_y=0, imu=(0, 3, 0), high=0)
         pass
+    
+    def fh0c_new_base(self, data: bytearray):
+        # print("fh0c_new_base", data.hex(' '))
+        params = data[2:len(data) - 1]
+        m_fh0c_new_base = Fh0cNewBase(
+            id=unpack_from("!B", params, 1)[0],
+            vol=unpack_from("!B", params, 2)[0],
+            ssi=unpack_from("!B", params, 3)[0],
+            state=unpack_from("!H", params, 4)[0],
+            sysFlag=unpack_from("!B", params, 6)[0],
+            obs_dist=(unpack_from("!B", params, 7)[0],
+                      unpack_from("!B", params, 8)[0],
+                      unpack_from("!B", params, 9)[0],
+                      unpack_from("!B", params, 10)[0]),
+            imu=(unpack_from("!h", params, 11)[0],
+                 unpack_from("!h", params, 13)[0],
+                 unpack_from("!h", params, 15)[0]),
+            loc=(unpack_from("!h", params, 17)[0],
+                 unpack_from("!h", params, 19)[0],
+                 unpack_from("!h", params, 21)[0]),
+            locErr=(unpack_from("!b", params, 23)[0],
+                    unpack_from("!b", params, 24)[0],
+                    unpack_from("!b", params, 25)[0]),
+        )
+        with self.m_info_lock:
+            self.m_fh0c_new_base = m_fh0c_new_base
+            pass
+        # print("self._fh0c_new_base", m_fh0c_new_base)
+        pass
 
     def image_pack_info(self, data: bytearray):
         # 无人机拍照后响应
@@ -694,6 +727,10 @@ class ReadDataParser:
     def get_fh0c_base(self):
         with self.m_info_lock:
             return self.m_fh0c_base
+
+    def get_fh0c_new_base(self):
+        with self.m_info_lock:
+            return self.m_fh0c_new_base
 
     def get_hardware_info(self):
         with self.m_info_lock:
