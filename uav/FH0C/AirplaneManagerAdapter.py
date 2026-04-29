@@ -2,6 +2,7 @@
 此文件是使用 FH0C 库对PhantasyIslandPythonRemoteControl库的模拟，
 目的是尽可能使得使用PhantasyIslandPythonRemoteControl库编写的代码可以在只修改import导入表的情况下直接调用FH0A库对应的功能
 """
+import dataclasses
 from typing import Dict, Optional
 import typing
 from time import sleep
@@ -10,12 +11,30 @@ from .SerialThread import SerialThread
 from .image_receiver import ImageReceiver
 
 
+@dataclasses.dataclass()
+class AirplaneFlyStatus(object):
+    """
+    每个飞机的飞行状态
+    """
+    landing: bool
+    isStop: bool
+    x: float
+    y: float
+    h: float
+    rX: float
+    rY: float
+    rZ: float
+    pass
+
+
 class AirplaneController(object):
     """
     此类是到PhantasyIslandPythonRemoteControl库中AirplaneController的适配器，是对SerialThread的wrapper
     """
     s: SerialThread
     image_receiver: ImageReceiver
+
+    status: AirplaneFlyStatus = None
 
     def __init__(self, port):
         self.image_receiver = ImageReceiver(self)
@@ -132,6 +151,21 @@ class AirplaneController(object):
         """悬停"""
         self.s.send().hovering()
         pass
+
+    def flush_status(self):
+        s = self.s.fh0c_new_base()
+        h = s.loc[2]
+        is_takeoff = True if h > 0 else False
+        self.status = AirplaneFlyStatus(
+            landing=is_takeoff,
+            isStop=is_takeoff,
+            x=s.loc[0],
+            y=s.loc[1],
+            h=h,
+            rX=s.imu[0],
+            rY=s.imu[1],
+            rZ=s.imu[2],
+        )
 
     pass
 
@@ -271,6 +305,13 @@ class AirplaneControllerExtended(AirplaneController):
     #     self.s.base_info()
     #     pass
 
+    def base_info(self):
+        """基础信息 BaseInfo
+        :return BaseInfo
+        """
+        self.s.fh0c_new_base()
+        pass
+
     def shutdown(self):
         self.s.shutdown()
         pass
@@ -334,6 +375,8 @@ class AirplaneManager(object):
         """刷新飞机数据
         这个函数为了完全适配PhantasyIslandPythonRemoteControl的API而存在
         """
+        for f in self.airplanes_table.values():
+            f.flush_status()
         return None
         pass
 

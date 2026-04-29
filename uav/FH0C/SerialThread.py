@@ -3,7 +3,7 @@ from queue import Queue, Empty
 from time import sleep
 from threading import Thread
 
-from .ReadDataParser import ReadDataParser, Fh0cBase
+from .ReadDataParser import ReadDataParser, Fh0cBase, Fh0cNewBase
 from .CommandConstructor import CommandConstructor
 from .QueueSignal import QueueSignal
 
@@ -197,9 +197,13 @@ class SerialThreadCore:
         self.s.close()
         pass
 
-    def fh0c_base(self) -> Fh0cBase:
+    # def fh0c_base(self) -> Fh0cBase:
+    #     """获取飞控基础状态数据"""
+    #     return self.thead_local_read.rdp.get_fh0c_base()
+
+    def fh0c_new_base(self) -> Fh0cNewBase:
         """获取飞控基础状态数据"""
-        return self.thead_local_read.rdp.get_fh0c_base()
+        return self.thead_local_read.rdp.get_fh0c_new_base()
 
     pass
 
