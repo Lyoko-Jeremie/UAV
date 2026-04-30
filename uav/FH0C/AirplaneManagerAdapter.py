@@ -155,7 +155,11 @@ class AirplaneController(object):
     def flush_status(self):
         s = self.s.fh0c_new_base()
         h = s.loc[2]
-        is_takeoff = True if h > 0 else False
+        # h == 256 meas h error
+        if h != 256 and h > 10:
+            is_takeoff = True
+        else:
+            is_takeoff = False
         self.status = AirplaneFlyStatus(
             landing=is_takeoff,
             isStop=is_takeoff,
