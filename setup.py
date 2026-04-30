@@ -11,7 +11,7 @@ if os.path.isfile(requirementPath):
 
 setuptools.setup(
     name="uav",
-    version="0.3.0",
+    version="0.3.1",
     description="Python Controller UAV",
     # https://stackoverflow.com/questions/51286928/what-is-where-argument-for-in-setuptools-find-packages
     # DO NOT pack mock/test (like js) into output
@@ -25,6 +25,7 @@ setuptools.setup(
     # install_requires=install_requires,
     install_requires=[
         'pyserial>=3.5',
+        'pymavlink>=2.4',
     ],
     author='Jeremie',
     author_email='lucheng989898@protonmail.com',
