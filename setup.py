@@ -11,7 +11,7 @@ if os.path.isfile(requirementPath):
 
 setuptools.setup(
     name="uav",
-    version="0.0.1",
+    version="0.3.0",
     description="Python Controller UAV",
     # https://stackoverflow.com/questions/51286928/what-is-where-argument-for-in-setuptools-find-packages
     # DO NOT pack mock/test (like js) into output
