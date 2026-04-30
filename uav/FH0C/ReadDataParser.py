@@ -84,7 +84,8 @@ class Fh0cBase:
     imu: Tuple[int, int, int]  # s16 x,y,z
     high: int  # s16 高度
 
-# 
+
+#
 # typedef struct 
 # {
 # 	u8 id;//编号
@@ -571,13 +572,13 @@ class ReadDataParser:
         # print("self._fh0c_base", m_fh0c_base)
         # self._fh0c_base Fh0cBase(id=0, vol=41, ssi=100, state=21260, setting=255, mv_flag=255, mv_tagId=65535, mv_x0=-10, mv_y0=-1, mv_x1=114, mv_y1=-1, flow_qual=-91, flow_x=-1, flow_y=0, imu=(0, 3, 0), high=0)
         pass
-    
+
     def fh0c_new_base(self, data: bytearray):
         # print("fh0c_new_base", data.hex(' '))
         params = data[2:len(data) - 1]
         m_fh0c_new_base = Fh0cNewBase(
             id=unpack_from("!B", params, 1)[0],
-            vol=unpack_from("!B", params, 2)[0],
+            vol=unpack_from("!B", params, 2)[0] / 10,
             ssi=unpack_from("!B", params, 3)[0],
             state=unpack_from("!H", params, 4)[0],
             sysFlag=unpack_from("!B", params, 6)[0],
@@ -588,9 +589,9 @@ class ReadDataParser:
             imu=(unpack_from("!h", params, 11)[0],
                  unpack_from("!h", params, 13)[0],
                  unpack_from("!h", params, 15)[0]),
-            loc=(unpack_from("!h", params, 17)[0],
-                 unpack_from("!h", params, 19)[0],
-                 unpack_from("!h", params, 21)[0]),
+            loc=(unpack_from("!h", params, 17)[0] / 10,
+                 unpack_from("!h", params, 19)[0] / 10,
+                 unpack_from("!h", params, 21)[0] / 10),
             locErr=(unpack_from("!b", params, 23)[0],
                     unpack_from("!b", params, 24)[0],
                     unpack_from("!b", params, 25)[0]),
@@ -645,7 +646,6 @@ class ReadDataParser:
         )
         pass
 
-
     def image_pack_data(self, data: bytearray, size_len: int):
         # 无人机真实发送数据包的格式：
         # 0xAA	len	0x0B	"    u16 units;      //包序号
@@ -655,12 +655,12 @@ class ReadDataParser:
         # <-- [0xAA, len 0x1D, {0x0B, units 2, buff 26}, checksum 1]
         # 其中 units 是分包的序号，从 0 开始递增，buff 是分包的数据内容
         # 注意：最后一个包 buff 可能 不足 26 字节，这时 len 会变小，buff 的长度也会变小
-        
+
         # 验证 checksum - 这是关键！只有校验正确的包才应该接收
         if not self._verify_checksum(data):
             print(f"image_pack_data: checksum failed, discarding packet: {data.hex(' ')}")
             return
-        
+
         params = data[2:len(data) - 1]
         buff_size = size_len - 3
         #
